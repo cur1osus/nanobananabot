@@ -14,7 +14,7 @@ from bot.db.models import TransactionModel, UserModel
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import WithdrawAction
 from bot.keyboards.inline import ik_withdraw_cancel, ik_withdraw_manager
-from bot.keyboards.reply import CANCEL_BUTTON_TEXT, rk_cancel
+from bot.keyboards.reply import CANCEL_BUTTON_TEXT
 from bot.settings import se
 from bot.states import ManagerWithdrawState
 from bot.utils.formatting import format_rub
@@ -147,11 +147,13 @@ async def withdraw_error_request(
             )
         except Exception as err:
             logger.warning("Не удалось обновить клавиатуру менеджера: %s", err)
-    await query.message.answer(
-        f"Опишите причину ошибки для заявки #{transaction.id}:",
-        reply_markup=await rk_cancel(),
+    await query.answer(
+        text=(
+            f"Опишите причину ошибки для заявки #{transaction.id} "
+            "в следующем сообщении."
+        ),
+        show_alert=True,
     )
-    await query.answer()
 
 
 @router.callback_query(WithdrawAction.filter(F.action == "cancel"))
@@ -191,8 +193,7 @@ async def withdraw_error_cancel(
         except Exception as err:
             logger.warning("Не удалось восстановить клавиатуру: %s", err)
 
-    await query.message.answer("Отменено.", reply_markup=ReplyKeyboardRemove())
-    await query.answer()
+    await query.answer("Отменено.")
 
 
 @router.message(ManagerWithdrawState.error_reason)

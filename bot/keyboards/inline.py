@@ -69,6 +69,16 @@ async def ik_image_model_select(
     return builder.as_markup()
 
 
+async def ik_image_waiting_photos() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="🔙 К выбору модели",
+        callback_data=ModelMenu().pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(

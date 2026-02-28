@@ -6,7 +6,7 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import ModelMenu, ModelSelect
-from bot.keyboards.inline import ik_image_model_select
+from bot.keyboards.inline import ik_image_model_select, ik_image_waiting_photos
 from bot.states import ImageGenerationState
 from bot.utils.image_models import DEFAULT_IMAGE_MODEL_KEY, is_image_model_key
 from bot.utils.image_state import get_image_data, update_image_data
@@ -60,11 +60,9 @@ async def select_model(
     await state.set_state(ImageGenerationState.waiting_photos)
     await edit_or_answer(
         query,
-        text=model_panel_text(user, callback_data.model),
-        reply_markup=await ik_image_model_select(callback_data.model),
+        text=f"{model_panel_text(user, callback_data.model)}\n\n{PHOTO_REQUEST_TEXT}",
+        reply_markup=await ik_image_waiting_photos(),
     )
-    if query.message:
-        await query.message.answer(PHOTO_REQUEST_TEXT)
     await query.answer()
 
 

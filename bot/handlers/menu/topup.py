@@ -44,6 +44,8 @@ async def topup_method(query: CallbackQuery, callback_data: TopupMethod) -> None
 @router.callback_query(TopupPlan.filter())
 async def topup_plan(query: CallbackQuery, callback_data: TopupPlan) -> None:
     await query.answer()
+    if not query.message:
+        return
     method_info = get_topup_method(callback_data.method)
     tariff = get_topup_tariff(callback_data.method, callback_data.plan)
     if not method_info or not tariff:
@@ -52,16 +54,20 @@ async def topup_plan(query: CallbackQuery, callback_data: TopupPlan) -> None:
             callback_data.method,
             callback_data.plan,
         )
-        await query.message.answer(
-            "Не удалось определить тариф. Попробуйте снова через меню пополнения."
+        await edit_or_answer(
+            query,
+            text="Не удалось определить тариф. Выберите способ пополнения снова.",
+            reply_markup=await ik_topup_methods(),
         )
         return
 
     invoice = build_invoice(method=method_info, tariff=tariff)
     if method_info.key == "card" and not invoice.provider_token:
         logger.warning("Провайдер-токен ЮKassa не настроен")
-        await query.message.answer(
-            "Оплата картой временно недоступна. Попробуйте позже."
+        await edit_or_answer(
+            query,
+            text="Оплата картой временно недоступна. Выберите другой способ пополнения.",
+            reply_markup=await ik_topup_methods(),
         )
         return
     await query.message.answer_invoice(
