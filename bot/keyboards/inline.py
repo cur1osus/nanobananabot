@@ -7,6 +7,8 @@ from bot.keyboards.enums import MusicBackTarget
 from bot.keyboards.factories import (
     InfoPeriod,
     MenuAction,
+    ModelMenu,
+    ModelSelect,
     MusicBack,
     MusicStyle,
     MusicTextAction,
@@ -17,6 +19,7 @@ from bot.keyboards.factories import (
     TopupPlan,
     WithdrawAction,
 )
+from bot.utils.image_models import IMAGE_MODELS, DEFAULT_IMAGE_MODEL_KEY
 from bot.utils.music_topics import MUSIC_TOPIC_OPTIONS
 from bot.utils.texts import get_topup_method, get_topup_tariffs
 
@@ -32,6 +35,38 @@ TOPIC_STYLE_OPTIONS: Final[list[tuple[str, str]]] = [
     ("Инди", "Инди"),
     ("🎸 Акустика", "Акустика"),
 ]
+
+
+def _model_button_label(model_key: str, selected_key: str) -> str:
+    for option in IMAGE_MODELS:
+        if option.key == model_key:
+            label = option.button_label
+            break
+    else:
+        label = IMAGE_MODELS[0].button_label
+    if model_key == selected_key:
+        return f"✅ {label}"
+    return label
+
+
+async def ik_choose_model() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🍌 Выбрать модель", callback_data=ModelMenu().pack())
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_image_model_select(
+    selected_key: str = DEFAULT_IMAGE_MODEL_KEY,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for option in IMAGE_MODELS:
+        builder.button(
+            text=_model_button_label(option.key, selected_key),
+            callback_data=ModelSelect(model=option.key).pack(),
+        )
+    builder.adjust(1)
+    return builder.as_markup()
 
 
 async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:

@@ -23,7 +23,6 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot import handlers
-from bot.background_tasks import schedule_music_polling
 from bot.db.base import close_db, create_db_session_pool, init_db
 from bot.middlewares.metrics import MetricsMiddleware
 from bot.middlewares.throw_session import ThrowDBSessionMiddleware
@@ -73,11 +72,6 @@ async def start_scheduler(
     redis: Redis,
     bot: Bot,
 ) -> None:
-    schedule_music_polling(
-        bot=bot,
-        sessionmaker=sessionmaker,
-        redis=redis,
-    )
     while True:
         await scheduler.run_pending()
         await asyncio.sleep(1)
@@ -173,8 +167,17 @@ def _short_description_text() -> str:
 
 
 async def main() -> None:
-    if not se.suno.api_key:
-        raise RuntimeError("SUNO_API_KEY не задан. Бот не может быть запущен.")
+    if not se.image_backend.api_key:
+        if se.is_dev:
+            logger.warning(
+                "IMAGE_BACKEND_API_KEY не задан. "
+                "Бот запущен в dev-режиме без внешнего API."
+            )
+        else:
+            raise RuntimeError(
+                "IMAGE_BACKEND_API_KEY не задан. "
+                "Бот не может быть запущен без внешнего API."
+            )
 
     api = PRODUCTION
 

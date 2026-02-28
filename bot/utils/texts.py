@@ -9,7 +9,9 @@ from bot.settings import se
 from bot.utils.formatting import format_rub
 
 MAIN_MENU_TEXT = (
-    "🏠 Главное меню\n💰 Ваш баланс: {credits} Hit$\n🎵 Что вы хотите сделать?"
+    "🏠 Главное меню\n"
+    "💰 Ваш баланс: {credits} генераций\n"
+    "🖼 Что вы хотите сделать?"
 )
 MY_TRACKS_MENU_TEXT = (
     "🎧 Ниже все треки, которые были тобой созданы.\n"
@@ -18,27 +20,69 @@ MY_TRACKS_MENU_TEXT = (
 MY_TRACKS_EMPTY_TEXT = "Пока нет ни одного трека. Создай новую песню в главном меню."
 
 BOT_INFO_TEXT = (
-    "Пиши песни, создавай тексты, генерируй собственные видео.\n\n"
-    "Сотрудничество/вопросы: @HitSongMaker_support"
+    "Редактируй и объединяй фото с помощью Nano Banana.\n\n"
+    "Сотрудничество/вопросы: @NanoBanana_support"
 )
 
 CONTACTS_TEXT = (
     "📞 Контакты\n\n"
-    "Официальный канал: @HitSongMaker_oficial\n"
-    "Официальный сайт: HitSongMaker.com\n"
-    "Чат: @HitSongMaker_chat"
+    "Служба поддержки: @NanoBanana_support\n"
+    "Официальный канал: @NanoBanana_official\n"
+    "Чат: @NanoBanana_chat"
 )
 
 
 BOT_DESCRIPTION_TEXT = (
-    "🎵 Добро пожаловать в HitSongMaker!\n\n"
-    "Здесь ты можешь:\n"
-    "• создавать песни с нуля\n"
-    "• писать тексты с помощью AI\n"
-    "• генерировать инструменталы\n\n"
-    "Все права на созданные треки принадлежат тебе 💿\n\n"
-    "Жми «🎼 Создать новую песню» и начнём 🚀"
+    "🍌 Добро пожаловать в Nano Banana!\n\n"
+    "Отправляй 1-4 фото, описывай, что изменить, и получай результат.\n"
+    "Подходит для редактирования и объединения изображений.\n\n"
+    "Жми «🍌 Выбрать модель» и начнём."
 )
+
+NANOBANANA_WELCOME_TEXT = (
+    "🍌 Добро пожаловать в Nano Banana!\n\n"
+    "У тебя 5 бесплатных генераций.\n\n"
+    "Модели:\n{models}\n\n"
+    "Нажми кнопку ниже, чтобы выбрать модель."
+)
+
+PHOTO_REQUEST_TEXT = "Пришлите 1-4 фотографии которые нужно изменить или объединить"
+
+PROMPT_REQUEST_TEXT = (
+    "Теперь опишите, что нужно изменить.\n"
+    "Например: «Сделай фон закатным, добавь мягкий свет и киношные цвета»."
+)
+
+
+def nanobanana_welcome_text() -> str:
+    from bot.utils.image_models import IMAGE_MODELS, model_bullet_line
+
+    models = "\n".join(model_bullet_line(option) for option in IMAGE_MODELS)
+    return NANOBANANA_WELCOME_TEXT.format(models=models)
+
+
+def model_panel_text(user: UserRD, model_key: str) -> str:
+    from bot.utils.image_models import format_generations, get_image_model
+
+    model = get_image_model(model_key)
+    return (
+        "Выберите модель для генерации.\n"
+        f"Текущая модель: {model.title}\n"
+        f"Стоимость: {format_generations(model.cost)}\n"
+        f"Баланс: {format_generations(user.credits)}"
+    )
+
+
+def generation_started_text(task_id: str, model_key: str) -> str:
+    from bot.utils.image_models import get_image_model
+
+    model = get_image_model(model_key)
+    return (
+        "✅ Генерация запущена!\n"
+        f"🆔 Задача: {task_id}\n"
+        f"🍌 Модель: {model.title}\n"
+        "Я пришлю результат, когда он будет готов."
+    )
 
 LYRICS_MENU_TEXT = (
     "Начнем с создания текста для песни 🎶\n\n"

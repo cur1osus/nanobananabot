@@ -5,6 +5,14 @@ class MenuAction(CallbackData, prefix="menu"):
     action: str
 
 
+class ModelMenu(CallbackData, prefix="model_menu"):
+    pass
+
+
+class ModelSelect(CallbackData, prefix="model_select"):
+    model: str
+
+
 class MusicBack(CallbackData, prefix="music_back"):
     target: str
 

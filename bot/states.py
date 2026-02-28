@@ -15,6 +15,12 @@ class MusicGenerationState(StatesGroup):
     ai_result = State()
 
 
+class ImageGenerationState(StatesGroup):
+    waiting_photos = State()
+    waiting_prompt = State()
+    processing = State()
+
+
 class WithdrawState(StatesGroup):
     amount = State()
     details = State()

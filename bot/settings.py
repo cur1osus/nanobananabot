@@ -44,6 +44,16 @@ class SunoSettings:
         self.poll_timeout = int(os.environ.get("SUNO_POLL_TIMEOUT", 120))
 
 
+class ImageBackendSettings:
+    def __init__(self) -> None:
+        self.api_key = os.environ.get("IMAGE_BACKEND_API_KEY", "")
+        self.base_url = os.environ.get(
+            "IMAGE_BACKEND_BASE_URL",
+            "https://example.com/api",
+        )
+        self.timeout = int(os.environ.get("IMAGE_BACKEND_TIMEOUT", 60))
+
+
 class AgentPlatformSettings:
     def __init__(self) -> None:
         self.api_key = os.environ.get("AGENT_PLATFORM_API_KEY", "")
@@ -111,6 +121,7 @@ class TopupSettings:
 
 
 class Settings:
+    env = os.environ.get("APP_ENV", "dev").lower()
     bot_token = os.environ.get("BOT_TOKEN", "")
     sep = os.environ.get("SEP", "\n")
     set_commands_on_startup = os.environ.get(
@@ -120,11 +131,16 @@ class Settings:
     db: DBSettings = DBSettings()
     redis: RedisSettings = RedisSettings()
     suno: SunoSettings = SunoSettings()
+    image_backend: ImageBackendSettings = ImageBackendSettings()
     agent_platform: AgentPlatformSettings = AgentPlatformSettings()
     vsegpt: VseGptSettings = VseGptSettings()
     withdraw: WithdrawSettings = WithdrawSettings()
     payments: PaymentsSettings = PaymentsSettings()
     topup: TopupSettings = TopupSettings()
+
+    @property
+    def is_dev(self) -> bool:
+        return self.env in ("dev", "development", "local", "test")
 
     def mysql_dsn(self) -> URL:
         return URL.create(

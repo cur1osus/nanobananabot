@@ -15,7 +15,7 @@ class UserModel(Base):
     user_id: Mapped[int] = mapped_column(BigInteger)
     name: Mapped[str] = mapped_column(String(100))
     username: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    credits: Mapped[int] = mapped_column(default=2)
+    credits: Mapped[int] = mapped_column(default=5)
     role: Mapped[str] = mapped_column(String(50), default=UserRole.USER.value)
 
     referrer_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
