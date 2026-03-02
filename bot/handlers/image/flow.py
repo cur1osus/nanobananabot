@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
@@ -155,10 +157,11 @@ async def collect_prompt(
         await state.set_state(ImageGenerationState.waiting_photos)
         return
 
-    # Send "generating" message
-    status_msg = await message.answer(
-        generation_started_text("processing", data.model_key)
-    )
+    # Generate task ID and send "generating" message
+    import uuid
+
+    task_id = uuid.uuid4().hex[:8]
+    status_msg = await message.answer(generation_started_text(task_id, data.model_key))
 
     try:
         # Generate image
@@ -247,9 +250,10 @@ async def collect_prompt_voice(
             await state.set_state(ImageGenerationState.waiting_photos)
             return
 
-        # Send "generating" message
+        # Generate task ID and send "generating" message
+        task_id = uuid.uuid4().hex[:8]
         status_msg = await message.answer(
-            generation_started_text("processing", data.model_key)
+            generation_started_text(task_id, data.model_key)
         )
 
         try:
