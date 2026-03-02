@@ -32,18 +32,6 @@ class DBSettings:
         self.password = os.environ.get(f"{_env_prefix}PASSWORD", "password")
 
 
-class SunoSettings:
-    def __init__(self) -> None:
-        self.api_key = os.environ.get("SUNO_API_KEY", "")
-        self.model = os.environ.get("SUNO_MODEL", "V5")
-        self.callback_url = os.environ.get(
-            "SUNO_CALLBACK_URL",
-            "https://example.com/callback",
-        )
-        self.poll_interval = float(os.environ.get("SUNO_POLL_INTERVAL", 5))
-        self.poll_timeout = int(os.environ.get("SUNO_POLL_TIMEOUT", 120))
-
-
 class ImageBackendSettings:
     def __init__(self) -> None:
         self.api_key = os.environ.get("IMAGE_BACKEND_API_KEY", "")
@@ -129,7 +117,6 @@ class Settings:
 
     db: DBSettings = DBSettings()
     redis: RedisSettings = RedisSettings()
-    suno: SunoSettings = SunoSettings()
     image_backend: ImageBackendSettings = ImageBackendSettings()
     agent_platform: AgentPlatformSettings = AgentPlatformSettings()
     vsegpt: VseGptSettings = VseGptSettings()

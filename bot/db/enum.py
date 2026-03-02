@@ -20,17 +20,3 @@ class TransactionType(str, enum.Enum):
     TOPUP = "topup"
     REFERRAL_BONUS = "referral_bonus"
     WITHDRAW_REQUEST = "withdraw_request"
-
-
-class UsageEventType(str, enum.Enum):
-    AI_TEXT = "ai_text"
-    MANUAL_TEXT = "manual_text"
-    INSTRUMENTAL = "instrumental"
-
-
-class MusicTaskStatus(str, enum.Enum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    SUCCESS = "success"
-    ERROR = "error"
-    TIMEOUT = "timeout"

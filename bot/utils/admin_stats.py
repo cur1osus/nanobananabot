@@ -8,24 +8,17 @@ from typing import TYPE_CHECKING, Final
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db.enum import (
-    MusicTaskStatus,
-    TransactionStatus,
-    TransactionType,
-    UsageEventType,
-)
-from bot.db.models import MusicTaskModel, TransactionModel, UsageEventModel, UserModel
+from bot.db.enum import TransactionStatus, TransactionType
+from bot.db.models import TransactionModel, UserModel
 from bot.db.redis.user_model import UserRD
 from bot.utils.formatting import format_rub
 from bot.utils.payments import CARD_CURRENCY, STARS_CURRENCY
 from bot.utils.speech_recognition import SpeechRecognitionError, get_vsegpt_balance
-from bot.utils.suno_api import SunoAPIError, build_suno_client
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
 
 ONLINE_MINUTES: Final[int] = 15
-MUSIC_TASK_SUCCESS: Final[str] = MusicTaskStatus.SUCCESS.value
 
 logger = logging.getLogger(__name__)
 
@@ -84,45 +77,6 @@ async def build_admin_info_text(
         bounds.prev_end,
     )
 
-    songs_current = await _count_music_tasks(session, bounds.start, bounds.end)
-    songs_prev = await _count_music_tasks(session, bounds.prev_start, bounds.prev_end)
-    ai_texts_current = await _count_events(
-        session,
-        UsageEventType.AI_TEXT.value,
-        bounds.start,
-        bounds.end,
-    )
-    ai_texts_prev = await _count_events(
-        session,
-        UsageEventType.AI_TEXT.value,
-        bounds.prev_start,
-        bounds.prev_end,
-    )
-    manual_texts_current = await _count_events(
-        session,
-        UsageEventType.MANUAL_TEXT.value,
-        bounds.start,
-        bounds.end,
-    )
-    manual_texts_prev = await _count_events(
-        session,
-        UsageEventType.MANUAL_TEXT.value,
-        bounds.prev_start,
-        bounds.prev_end,
-    )
-    instrumental_current = await _count_events(
-        session,
-        UsageEventType.INSTRUMENTAL.value,
-        bounds.start,
-        bounds.end,
-    )
-    instrumental_prev = await _count_events(
-        session,
-        UsageEventType.INSTRUMENTAL.value,
-        bounds.prev_start,
-        bounds.prev_end,
-    )
-    suno_credits = await _fetch_suno_credits()
     vsegpt_credits = await _fetch_vsegpt_credits()
 
     return (
@@ -130,12 +84,7 @@ async def build_admin_info_text(
         f"Продажи (карта): {_format_sales_by_currency(sales_current, sales_prev, CARD_CURRENCY)}\n"
         f"Продажи (звезды): {_format_sales_by_currency(sales_current, sales_prev, STARS_CURRENCY)}\n"
         f"Выводы реферерам: {format_rub(withdrawals_current)} р. ({_format_delta_rub(withdrawals_current - withdrawals_prev)})\n\n"
-        f"Кредиты SunoApi: {suno_credits}\n"
         f"Кредиты VseGpt: {vsegpt_credits}\n\n"
-        f"Песни: {songs_current} ({_format_delta(songs_current, songs_prev)})\n"
-        f"Сгенерированные тексты: {ai_texts_current} ({_format_delta(ai_texts_current, ai_texts_prev)})\n"
-        f"Сгенерированные инструменталы: {instrumental_current} ({_format_delta(instrumental_current, instrumental_prev)})\n\n"
-        f"Тексты введены вручную: {manual_texts_current} ({_format_delta(manual_texts_current, manual_texts_prev)})\n\n"
         f"Всего пользователей: {total_users} (+{new_users})\n"
         f"Онлайн ({ONLINE_MINUTES} мин): {online_users}"
     )
@@ -147,41 +96,6 @@ async def _count_users(session: AsyncSession, start: datetime, end: datetime) ->
             select(func.count(UserModel.id)).where(
                 UserModel.registration_datetime >= start,
                 UserModel.registration_datetime < end,
-            )
-        )
-        or 0
-    )
-
-
-async def _count_events(
-    session: AsyncSession,
-    event_type: str,
-    start: datetime,
-    end: datetime,
-) -> int:
-    return (
-        await session.scalar(
-            select(func.count(UsageEventModel.id)).where(
-                UsageEventModel.event_type == event_type,
-                UsageEventModel.created_at >= start,
-                UsageEventModel.created_at < end,
-            )
-        )
-        or 0
-    )
-
-
-async def _count_music_tasks(
-    session: AsyncSession,
-    start: datetime,
-    end: datetime,
-) -> int:
-    return (
-        await session.scalar(
-            select(func.count(MusicTaskModel.id)).where(
-                MusicTaskModel.status == MUSIC_TASK_SUCCESS,
-                MusicTaskModel.updated_at >= start,
-                MusicTaskModel.updated_at < end,
             )
         )
         or 0
@@ -251,15 +165,6 @@ def _format_delta(current: int, previous: int) -> str:
 
 def _format_period(start: datetime, end: datetime) -> str:
     return f"{start:%d.%m.%Y %H:%M} — {end:%d.%m.%Y %H:%M}"
-
-
-async def _fetch_suno_credits() -> str:
-    try:
-        credits = await build_suno_client().get_remaining_credits()
-    except SunoAPIError as err:
-        logger.warning("Не удалось получить Hit$ Suno: %s", err)
-        return "недоступно"
-    return f"{credits} (~{credits // 12} песен)"
 
 
 async def _fetch_vsegpt_credits() -> str:
