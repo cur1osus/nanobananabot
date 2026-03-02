@@ -168,16 +168,7 @@ def _short_description_text() -> str:
 
 async def main() -> None:
     if not se.image_backend.api_key:
-        if se.is_dev:
-            logger.warning(
-                "IMAGE_BACKEND_API_KEY не задан. "
-                "Бот запущен в dev-режиме без внешнего API."
-            )
-        else:
-            raise RuntimeError(
-                "IMAGE_BACKEND_API_KEY не задан. "
-                "Бот не может быть запущен без внешнего API."
-            )
+        logger.warning("IMAGE_BACKEND_API_KEY не задан. Бот запущен без внешнего API.")
 
     api = PRODUCTION
 
