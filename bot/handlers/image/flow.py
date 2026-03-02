@@ -23,6 +23,10 @@ from bot.utils.image_models import (
 from bot.utils.image_state import get_image_data, update_image_data
 from bot.utils.image_tasks import generate_image
 from bot.utils.messaging import edit_or_answer
+from bot.utils.speech_recognition import (
+    SpeechRecognitionError,
+    transcribe_message_audio,
+)
 from bot.utils.texts import (
     PHOTO_REQUEST_TEXT,
     PROMPT_REQUEST_TEXT,
@@ -195,3 +199,104 @@ async def collect_prompt(
     # Reset state
     await update_image_data(state, prompt="", prompt_requested=False, photos=[])
     await state.set_state(ImageGenerationState.waiting_photos)
+
+
+@router.message(ImageGenerationState.waiting_prompt, F.voice | F.audio)
+async def collect_prompt_voice(
+    message: Message,
+    state: FSMContext,
+    user: UserRD,
+    session: AsyncSession,
+    redis: Redis,
+) -> None:
+    """Handle voice/audio messages for image generation prompt."""
+    # Send processing message
+    processing_msg = await message.answer("🎙️ Распознаю голосовое сообщение...")
+
+    try:
+        # Transcribe audio
+        prompt = await transcribe_message_audio(message, language="ru")
+
+        if not prompt:
+            await processing_msg.edit_text(
+                "Не удалось распознать голосовое сообщение. Попробуйте еще раз или введите текстом."
+            )
+            return
+
+        # Delete processing message
+        await processing_msg.delete()
+
+        # Show recognized text
+        await message.answer(f"📝 Распознано: {prompt}")
+
+        # Now process the prompt same as text
+        data = await get_image_data(state)
+        if not data.photos:
+            await state.set_state(ImageGenerationState.waiting_photos)
+            await message.answer(PHOTO_REQUEST_TEXT)
+            return
+
+        model = get_image_model(data.model_key)
+
+        # Check credits
+        if user.credits < model.cost:
+            await message.answer(
+                f"Недостаточно кредитов для генерации. Нужно: {model.cost}, у вас: {user.credits}",
+                reply_markup=await ik_back_home(),
+            )
+            await state.set_state(ImageGenerationState.waiting_photos)
+            return
+
+        # Send "generating" message
+        status_msg = await message.answer(
+            generation_started_text("processing", data.model_key)
+        )
+
+        try:
+            # Generate image
+            image_bytes = await generate_image(
+                prompt=prompt,
+                photo_ids=data.photos,
+                aspect_ratio="1:1",
+                output_format="jpeg",
+            )
+
+            # Deduct credits
+            await deduct_user_credits(
+                session=session,
+                redis=redis,
+                user_id=user.user_id,
+                amount=model.cost,
+            )
+
+            # Send image to user
+            input_file = BufferedInputFile(
+                file=image_bytes, filename=f"generated_{data.model_key}.jpg"
+            )
+            await message.answer_photo(
+                photo=input_file,
+                caption=f"✅ Готово!\n🎨 Модель: {model.title}\n💰 Списано: {model.cost} кредитов",
+                reply_markup=await ik_back_home(),
+            )
+
+            # Delete status message
+            await status_msg.delete()
+
+        except Exception as e:
+            await status_msg.edit_text(
+                f"❌ Ошибка при генерации изображения. Попробуйте позже.\n\n"
+                f"Если ошибка повторяется, обратитесь в поддержку."
+            )
+
+        # Reset state
+        await update_image_data(state, prompt="", prompt_requested=False, photos=[])
+        await state.set_state(ImageGenerationState.waiting_photos)
+
+    except SpeechRecognitionError as e:
+        await processing_msg.edit_text(
+            f"❌ Ошибка распознавания: {e}\n\nПопробуйте ввести текстом."
+        )
+    except Exception as e:
+        await processing_msg.edit_text(
+            "❌ Произошла ошибка при обработке голосового сообщения. Попробуйте ввести текстом."
+        )
