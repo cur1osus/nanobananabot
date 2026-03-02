@@ -2,20 +2,32 @@ from __future__ import annotations
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.db.func import deduct_user_credits
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import ModelMenu, ModelSelect
-from bot.keyboards.inline import ik_image_model_select, ik_image_waiting_photos
+from bot.keyboards.inline import (
+    ik_back_home,
+    ik_image_model_select,
+    ik_image_waiting_photos,
+)
 from bot.states import ImageGenerationState
-from bot.utils.image_models import DEFAULT_IMAGE_MODEL_KEY, is_image_model_key
+from bot.utils.image_models import (
+    DEFAULT_IMAGE_MODEL_KEY,
+    get_image_model,
+    is_image_model_key,
+)
 from bot.utils.image_state import get_image_data, update_image_data
-from bot.utils.image_tasks import enqueue_fake_image_task
+from bot.utils.image_tasks import generate_image
 from bot.utils.messaging import edit_or_answer
 from bot.utils.texts import (
     PHOTO_REQUEST_TEXT,
     PROMPT_REQUEST_TEXT,
     generation_started_text,
+    main_menu_text,
     model_panel_text,
 )
 
@@ -50,6 +62,15 @@ async def select_model(
     if not is_image_model_key(callback_data.model):
         await query.answer("Неизвестная модель", show_alert=True)
         return
+
+    model = get_image_model(callback_data.model)
+    if user.credits < model.cost:
+        await query.answer(
+            f"Недостаточно кредитов. Нужно: {model.cost}, у вас: {user.credits}",
+            show_alert=True,
+        )
+        return
+
     await update_image_data(
         state,
         model_key=callback_data.model,
@@ -104,6 +125,9 @@ async def collect_photos(
 async def collect_prompt(
     message: Message,
     state: FSMContext,
+    user: UserRD,
+    session: AsyncSession,
+    redis: Redis,
 ) -> None:
     prompt = message.text.strip() if message.text else ""
     if not prompt:
@@ -116,12 +140,58 @@ async def collect_prompt(
         await message.answer(PHOTO_REQUEST_TEXT)
         return
 
-    task_id = await enqueue_fake_image_task(
-        model_key=data.model_key,
-        prompt=prompt,
-        photo_ids=data.photos,
+    model = get_image_model(data.model_key)
+
+    # Check credits again before generating
+    if user.credits < model.cost:
+        await message.answer(
+            f"Недостаточно кредитов для генерации. Нужно: {model.cost}, у вас: {user.credits}",
+            reply_markup=await ik_back_home(),
+        )
+        await state.set_state(ImageGenerationState.waiting_photos)
+        return
+
+    # Send "generating" message
+    status_msg = await message.answer(
+        generation_started_text("processing", data.model_key)
     )
+
+    try:
+        # Generate image
+        image_bytes = await generate_image(
+            prompt=prompt,
+            photo_ids=data.photos,
+            aspect_ratio="1:1",
+            output_format="jpeg",
+        )
+
+        # Deduct credits
+        await deduct_user_credits(
+            session=session,
+            redis=redis,
+            user_id=user.user_id,
+            amount=model.cost,
+        )
+
+        # Send image to user
+        input_file = BufferedInputFile(
+            file=image_bytes, filename=f"generated_{data.model_key}.jpg"
+        )
+        await message.answer_photo(
+            photo=input_file,
+            caption=f"✅ Готово!\n🎨 Модель: {model.title}\n💰 Списано: {model.cost} кредитов",
+            reply_markup=await ik_back_home(),
+        )
+
+        # Delete status message
+        await status_msg.delete()
+
+    except Exception as e:
+        await status_msg.edit_text(
+            f"❌ Ошибка при генерации изображения. Попробуйте позже.\n\n"
+            f"Если ошибка повторяется, обратитесь в поддержку."
+        )
+
+    # Reset state
     await update_image_data(state, prompt="", prompt_requested=False, photos=[])
-    await state.set_state(ImageGenerationState.processing)
-    await message.answer(generation_started_text(task_id, data.model_key))
     await state.set_state(ImageGenerationState.waiting_photos)
