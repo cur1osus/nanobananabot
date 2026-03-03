@@ -13,6 +13,10 @@ class ModelSelect(CallbackData, prefix="model_select"):
     model: str
 
 
+class ImageResultAction(CallbackData, prefix="image_result"):
+    action: str
+
+
 class TopupMethod(CallbackData, prefix="topup_method"):
     method: str
 

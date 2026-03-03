@@ -1,9 +1,10 @@
 from typing import Final
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.keyboards.factories import (
+    ImageResultAction,
     InfoPeriod,
     MenuAction,
     ModelMenu,
@@ -56,6 +57,24 @@ async def ik_image_waiting_photos() -> InlineKeyboardMarkup:
     builder.button(
         text="🔙 К выбору модели",
         callback_data=ModelMenu().pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_image_result_actions() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="🔄 Сгенерировать похожее",
+        callback_data=ImageResultAction(action="similar").pack(),
+    )
+    builder.button(
+        text="1️⃣ Начать с 1-го фото",
+        callback_data=ImageResultAction(action="first_photo").pack(),
+    )
+    builder.button(
+        text="🖼 Начать заново",
+        callback_data=ImageResultAction(action="restart").pack(),
     )
     builder.adjust(1)
     return builder.as_markup()
