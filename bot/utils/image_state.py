@@ -14,6 +14,7 @@ IMAGE_STATE_KEY = "image_flow"
 class ImageFlowData:
     model_key: str = DEFAULT_IMAGE_MODEL_KEY
     photos: list[str] = field(default_factory=list)
+    aspect_ratio: str = "1:1"
     prompt: str = ""
     prompt_requested: bool = False
 
@@ -21,10 +22,13 @@ class ImageFlowData:
     def from_dict(cls, raw: dict[str, Any]) -> "ImageFlowData":
         model_key = str(raw.get("model_key", DEFAULT_IMAGE_MODEL_KEY))
         raw_photos = raw.get("photos", [])
-        photos = [str(item) for item in raw_photos] if isinstance(raw_photos, list) else []
+        photos = (
+            [str(item) for item in raw_photos] if isinstance(raw_photos, list) else []
+        )
         return cls(
             model_key=model_key,
             photos=photos,
+            aspect_ratio=str(raw.get("aspect_ratio", "1:1")) or "1:1",
             prompt=str(raw.get("prompt", "")),
             prompt_requested=bool(raw.get("prompt_requested", False)),
         )
@@ -33,6 +37,7 @@ class ImageFlowData:
         return {
             "model_key": self.model_key,
             "photos": list(self.photos),
+            "aspect_ratio": self.aspect_ratio,
             "prompt": self.prompt,
             "prompt_requested": self.prompt_requested,
         }

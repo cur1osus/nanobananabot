@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import math
 import uuid
 
 import aiohttp
@@ -43,6 +44,20 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 MAX_PHOTOS = 4
+
+COMMON_ASPECT_RATIOS: tuple[tuple[str, float], ...] = (
+    ("1:1", 1.0),
+    ("4:3", 4 / 3),
+    ("3:4", 3 / 4),
+    ("3:2", 3 / 2),
+    ("2:3", 2 / 3),
+    ("16:9", 16 / 9),
+    ("9:16", 9 / 16),
+    ("4:5", 4 / 5),
+    ("5:4", 5 / 4),
+    ("21:9", 21 / 9),
+    ("9:21", 9 / 21),
+)
 
 
 async def _download_telegram_file(bot_token: str, file_path: str) -> bytes:
@@ -87,6 +102,28 @@ def _generation_error_text(error: Exception) -> str:
         "❌ Ошибка при генерации изображения. Попробуйте позже.\n\n"
         "Если ошибка повторяется, обратитесь в поддержку."
     )
+
+
+def _closest_aspect_ratio(width: int, height: int) -> str:
+    if width <= 0 or height <= 0:
+        return "1:1"
+
+    raw_ratio = width / height
+    closest_key = "1:1"
+    min_delta = float("inf")
+    for ratio_key, ratio_value in COMMON_ASPECT_RATIOS:
+        delta = abs(raw_ratio - ratio_value)
+        if delta < min_delta:
+            min_delta = delta
+            closest_key = ratio_key
+
+    # If image ratio already close enough to a common ratio, use it.
+    if min_delta <= 0.03:
+        return closest_key
+
+    # Otherwise keep original ratio in reduced form.
+    divisor = math.gcd(width, height)
+    return f"{width // divisor}:{height // divisor}"
 
 
 async def _send_generation_result(
@@ -149,6 +186,7 @@ async def select_model(
         state,
         model_key=callback_data.model,
         photos=[],
+        aspect_ratio="1:1",
         prompt="",
         prompt_requested=False,
     )
@@ -181,7 +219,11 @@ async def collect_photos(
         return
     if not message.photo:
         return
-    photos.append(message.photo[-1].file_id)
+    photo = message.photo[-1]
+    photos.append(photo.file_id)
+    aspect_ratio = data.aspect_ratio
+    if len(photos) == 1:
+        aspect_ratio = _closest_aspect_ratio(photo.width, photo.height)
 
     prompt_requested = data.prompt_requested
     if not prompt_requested:
@@ -189,7 +231,12 @@ async def collect_photos(
         await message.answer(PROMPT_REQUEST_TEXT)
         await state.set_state(ImageGenerationState.waiting_prompt)
 
-    await update_image_data(state, photos=photos, prompt_requested=prompt_requested)
+    await update_image_data(
+        state,
+        photos=photos,
+        aspect_ratio=aspect_ratio,
+        prompt_requested=prompt_requested,
+    )
 
     if len(photos) >= MAX_PHOTOS:
         await message.answer("Получено 4 фото. Теперь пришлите текстовый промпт.")
@@ -237,7 +284,7 @@ async def collect_prompt(
             prompt=prompt,
             model=model.api_model,
             reference_images=reference_images,
-            aspect_ratio="1:1",
+            aspect_ratio=data.aspect_ratio,
             output_format="jpeg",
         )
 
@@ -269,7 +316,13 @@ async def collect_prompt(
         await status_msg.edit_text(_generation_error_text(e))
 
     # Reset state
-    await update_image_data(state, prompt="", prompt_requested=False, photos=[])
+    await update_image_data(
+        state,
+        prompt="",
+        prompt_requested=False,
+        photos=[],
+        aspect_ratio="1:1",
+    )
     await state.set_state(ImageGenerationState.waiting_photos)
 
 
@@ -333,7 +386,7 @@ async def collect_prompt_voice(
                 prompt=prompt,
                 model=model.api_model,
                 reference_images=reference_images,
-                aspect_ratio="1:1",
+                aspect_ratio=data.aspect_ratio,
                 output_format="jpeg",
             )
 
@@ -365,7 +418,13 @@ async def collect_prompt_voice(
             await status_msg.edit_text(_generation_error_text(e))
 
         # Reset state
-        await update_image_data(state, prompt="", prompt_requested=False, photos=[])
+        await update_image_data(
+            state,
+            prompt="",
+            prompt_requested=False,
+            photos=[],
+            aspect_ratio="1:1",
+        )
         await state.set_state(ImageGenerationState.waiting_photos)
 
     except SpeechRecognitionError as e:
