@@ -9,6 +9,7 @@ class ImageModelOption:
     key: str
     title: str
     api_model: str
+    create_api_model: str
     cost: int
     details: str
     button_label: str
@@ -19,6 +20,7 @@ IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
         key="standard",
         title="Standard",
         api_model="img2img-google/flash-25-edit-multi",
+        create_api_model="img-google/flash-25",
         cost=1,
         details="",
         button_label="Standard (1 ген)",
@@ -27,6 +29,7 @@ IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
         key="nano2",
         title="Nano Banana 2",
         api_model="img2img-google/nano-banana-2-edit-multi",
+        create_api_model="img-google/nano-banana-2",
         cost=3,
         details="4K, тренды",
         button_label="🆕 Nano Banana 2 (3 ген)",
@@ -35,6 +38,7 @@ IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
         key="pro",
         title="Pro",
         api_model="img2img-google/nano-banana-pro-edit-multi",
+        create_api_model="img-google/nano-banana-pro",
         cost=4,
         details="4K, максимум качества",
         button_label="Pro (4 ген)",

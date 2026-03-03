@@ -15,6 +15,7 @@ from bot.db.enum import TransactionStatus, TransactionType
 from bot.db.models import TransactionModel, UserModel
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.inline import (
+    ik_create_aspect_ratio,
     ik_earn_menu,
     ik_how_menu,
     ik_image_model_select,
@@ -26,6 +27,7 @@ from bot.utils.image_models import DEFAULT_IMAGE_MODEL_KEY
 from bot.utils.image_state import get_image_data, update_image_data
 from bot.utils.texts import (
     CONTACTS_TEXT,
+    CREATE_ASPECT_RATIO_TEXT,
     PHOTO_REQUEST_TEXT,
     PROMPT_EXAMPLES_TEXT,
     TOPUP_METHODS_TEXT,
@@ -61,7 +63,21 @@ async def cmd_gen(message: Message, state: FSMContext) -> None:
 
 @router.message(Command("create"))
 async def cmd_create(message: Message, state: FSMContext) -> None:
-    await _start_generation_flow(message, state)
+    data = await get_image_data(state)
+    selected_key = data.model_key or DEFAULT_IMAGE_MODEL_KEY
+    await update_image_data(
+        state,
+        model_key=selected_key,
+        photos=[],
+        prompt="",
+        prompt_requested=False,
+        aspect_ratio="auto",
+    )
+    await state.set_state(ImageGenerationState.waiting_create_aspect)
+    await message.answer(
+        CREATE_ASPECT_RATIO_TEXT,
+        reply_markup=await ik_create_aspect_ratio(),
+    )
 
 
 @router.message(Command("model"))
@@ -92,9 +108,14 @@ async def cmd_friend(
     session: AsyncSession,
 ) -> None:
     await state.clear()
-    bot_name = (await message.bot.get_my_name()).name
+    bot = message.bot
+    if bot is None:
+        return
+    assert bot is not None
+
+    bot_name = (await bot.get_my_name()).name
     ref_link = await create_start_link(
-        bot=message.bot,
+        bot=bot,
         payload=f"ref_{user.user_id}",
         encode=False,
     )
@@ -150,6 +171,11 @@ async def cmd_friend(
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    bot_name = (await message.bot.get_my_name()).name
+    bot = message.bot
+    if bot is None:
+        return
+    assert bot is not None
+
+    bot_name = (await bot.get_my_name()).name
     await message.answer(how_text(bot_name), reply_markup=await ik_how_menu())
     await message.answer(CONTACTS_TEXT)

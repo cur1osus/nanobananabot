@@ -4,6 +4,7 @@ from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.keyboards.factories import (
+    CreateAspectRatio,
     ImageResultAction,
     InfoPeriod,
     MenuAction,
@@ -77,6 +78,30 @@ async def ik_image_result_actions() -> InlineKeyboardMarkup:
         callback_data=ImageResultAction(action="restart").pack(),
     )
     builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_create_aspect_ratio() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    options = (
+        ("auto", "🔁 Auto"),
+        ("1x1", "1:1"),
+        ("4x3", "4:3"),
+        ("3x4", "3:4"),
+        ("3x2", "3:2"),
+        ("2x3", "2:3"),
+        ("16x9", "16:9"),
+        ("9x16", "9:16"),
+        ("21x9", "21:9"),
+        ("5x4", "5:4"),
+        ("4x5", "4:5"),
+    )
+    for ratio, label in options:
+        builder.button(
+            text=label,
+            callback_data=CreateAspectRatio(ratio=ratio).pack(),
+        )
+    builder.adjust(2, 3, 3, 3)
     return builder.as_markup()
 
 

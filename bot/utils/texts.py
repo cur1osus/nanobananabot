@@ -55,6 +55,15 @@ PROMPT_EXAMPLES_TEXT = (
     "5) Улучши качество и резкость, без изменения лица."
 )
 
+CREATE_ASPECT_RATIO_TEXT = (
+    "✨ Режим создания изображения\n\nСначала выберите соотношение сторон:"
+)
+
+CREATE_PROMPT_TEXT = (
+    "Отлично. Теперь опишите, что сгенерировать.\n"
+    "Например: «Красный спорткар на ночной улице в дождь, неон, кинокадр»."
+)
+
 
 def nanobanana_welcome_text() -> str:
     from bot.utils.image_models import IMAGE_MODELS, model_bullet_line

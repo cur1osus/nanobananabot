@@ -13,9 +13,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db.func import deduct_user_credits
 from bot.db.redis.user_model import UserRD
-from bot.keyboards.factories import ImageResultAction, ModelMenu, ModelSelect
+from bot.keyboards.factories import (
+    CreateAspectRatio,
+    ImageResultAction,
+    ModelMenu,
+    ModelSelect,
+)
 from bot.keyboards.inline import (
     ik_back_home,
+    ik_create_aspect_ratio,
     ik_image_model_select,
     ik_image_result_actions,
     ik_image_waiting_photos,
@@ -34,6 +40,7 @@ from bot.utils.speech_recognition import (
     transcribe_message_audio,
 )
 from bot.utils.texts import (
+    CREATE_PROMPT_TEXT,
     PHOTO_REQUEST_TEXT,
     PROMPT_REQUEST_TEXT,
     generation_started_text,
@@ -44,6 +51,20 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 MAX_PHOTOS = 4
+
+CREATE_RATIO_MAP: dict[str, str] = {
+    "auto": "auto",
+    "21x9": "21:9",
+    "16x9": "16:9",
+    "3x2": "3:2",
+    "4x3": "4:3",
+    "5x4": "5:4",
+    "1x1": "1:1",
+    "4x5": "4:5",
+    "3x4": "3:4",
+    "2x3": "2:3",
+    "9x16": "9:16",
+}
 
 
 async def _download_telegram_file(bot_token: str, file_path: str) -> bytes:
@@ -98,6 +119,7 @@ async def _send_generation_result(
     model_title: str,
     model_cost: int,
     task_id: str,
+    show_result_actions: bool = True,
 ) -> None:
     filename = f"generation_{task_id}_{model_key}.jpg"
     await message.answer_document(
@@ -107,7 +129,11 @@ async def _send_generation_result(
     await message.answer_photo(
         photo=BufferedInputFile(file=image_bytes, filename="preview.jpg"),
         caption=f"✅ Готово!\n🎨 Модель: {model_title}\n💰 Списано: {model_cost} кредитов",
-        reply_markup=await ik_image_result_actions(),
+        reply_markup=(
+            await ik_image_result_actions()
+            if show_result_actions
+            else await ik_back_home()
+        ),
     )
 
 
@@ -178,6 +204,71 @@ async def _run_image_generation(
         await status_msg.edit_text(_generation_error_text(e))
     except Exception as e:
         logger.exception("Unexpected image generation error")
+        await status_msg.edit_text(_generation_error_text(e))
+
+
+async def _run_create_generation(
+    *,
+    message: Message,
+    state: FSMContext,
+    user: UserRD,
+    session: AsyncSession,
+    redis: Redis,
+    prompt: str,
+) -> None:
+    normalized_prompt = prompt.strip()
+    if not normalized_prompt:
+        await message.answer("Опишите запрос текстом.")
+        return
+
+    data = await get_image_data(state)
+    model = get_image_model(data.model_key)
+    if user.credits < model.cost:
+        await message.answer(
+            f"Недостаточно кредитов для генерации. Нужно: {model.cost}, у вас: {user.credits}",
+            reply_markup=await ik_back_home(),
+        )
+        return
+
+    task_id = uuid.uuid4().hex[:8]
+    status_msg = await message.answer(generation_started_text(task_id, data.model_key))
+
+    try:
+        image_bytes = await generate_image(
+            prompt=normalized_prompt,
+            model=model.create_api_model,
+            reference_images=None,
+            aspect_ratio=data.aspect_ratio,
+            output_format="jpeg",
+        )
+        await deduct_user_credits(
+            session=session,
+            redis=redis,
+            user_id=user.user_id,
+            amount=model.cost,
+        )
+        await _send_generation_result(
+            message,
+            image_bytes=image_bytes,
+            model_key=data.model_key,
+            model_title=model.title,
+            model_cost=model.cost,
+            task_id=task_id,
+            show_result_actions=False,
+        )
+        await update_image_data(
+            state,
+            prompt=normalized_prompt,
+            photos=[],
+            prompt_requested=True,
+        )
+        await state.set_state(ImageGenerationState.waiting_create_prompt)
+        await status_msg.delete()
+    except ImageGenerationError as e:
+        logger.exception("Create image API error")
+        await status_msg.edit_text(_generation_error_text(e))
+    except Exception as e:
+        logger.exception("Unexpected create image error")
         await status_msg.edit_text(_generation_error_text(e))
 
 
@@ -256,7 +347,7 @@ async def handle_result_actions(
             await query.answer("Нет данных прошлой генерации", show_alert=True)
             return
         await query.answer()
-        if query.message:
+        if isinstance(query.message, Message):
             await _run_image_generation(
                 message=query.message,
                 state=state,
@@ -279,7 +370,7 @@ async def handle_result_actions(
         )
         await state.set_state(ImageGenerationState.waiting_prompt)
         await query.answer()
-        if query.message:
+        if isinstance(query.message, Message):
             await query.message.answer(
                 "Оставил 1-е фото. Теперь пришлите новый промпт."
             )
@@ -295,7 +386,7 @@ async def handle_result_actions(
         )
         await state.set_state(ImageGenerationState.waiting_photos)
         await query.answer()
-        if query.message:
+        if isinstance(query.message, Message):
             await query.message.answer(
                 PHOTO_REQUEST_TEXT,
                 reply_markup=await ik_image_waiting_photos(),
@@ -396,6 +487,95 @@ async def collect_prompt_voice(
             prompt=prompt,
         )
 
+    except SpeechRecognitionError as e:
+        await processing_msg.edit_text(
+            f"❌ Ошибка распознавания: {e}\n\nПопробуйте ввести текстом."
+        )
+    except Exception:
+        await processing_msg.edit_text(
+            "❌ Произошла ошибка при обработке голосового сообщения. Попробуйте ввести текстом."
+        )
+
+
+@router.message(ImageGenerationState.waiting_create_aspect)
+async def remind_create_aspect(message: Message) -> None:
+    await message.answer(
+        "Выберите соотношение сторон кнопками ниже.",
+        reply_markup=await ik_create_aspect_ratio(),
+    )
+
+
+@router.callback_query(
+    ImageGenerationState.waiting_create_aspect, CreateAspectRatio.filter()
+)
+async def select_create_aspect_ratio(
+    query: CallbackQuery,
+    callback_data: CreateAspectRatio,
+    state: FSMContext,
+) -> None:
+    aspect_ratio = CREATE_RATIO_MAP.get(callback_data.ratio)
+    if not aspect_ratio:
+        await query.answer("Неизвестное соотношение", show_alert=True)
+        return
+
+    await update_image_data(
+        state,
+        photos=[],
+        prompt="",
+        prompt_requested=True,
+        aspect_ratio=aspect_ratio,
+    )
+    await state.set_state(ImageGenerationState.waiting_create_prompt)
+    await query.answer()
+    await edit_or_answer(query, text=CREATE_PROMPT_TEXT)
+
+
+@router.message(ImageGenerationState.waiting_create_prompt, F.text)
+async def collect_create_prompt(
+    message: Message,
+    state: FSMContext,
+    user: UserRD,
+    session: AsyncSession,
+    redis: Redis,
+) -> None:
+    await _run_create_generation(
+        message=message,
+        state=state,
+        user=user,
+        session=session,
+        redis=redis,
+        prompt=message.text or "",
+    )
+
+
+@router.message(ImageGenerationState.waiting_create_prompt, F.voice | F.audio)
+async def collect_create_prompt_voice(
+    message: Message,
+    state: FSMContext,
+    user: UserRD,
+    session: AsyncSession,
+    redis: Redis,
+) -> None:
+    processing_msg = await message.answer("🎙️ Распознаю голосовое сообщение...")
+
+    try:
+        prompt = await transcribe_message_audio(message, language="ru")
+        if not prompt:
+            await processing_msg.edit_text(
+                "Не удалось распознать голосовое сообщение. Попробуйте еще раз или введите текстом."
+            )
+            return
+
+        await processing_msg.delete()
+        await message.answer(f"📝 Распознано: {prompt}")
+        await _run_create_generation(
+            message=message,
+            state=state,
+            user=user,
+            session=session,
+            redis=redis,
+            prompt=prompt,
+        )
     except SpeechRecognitionError as e:
         await processing_msg.edit_text(
             f"❌ Ошибка распознавания: {e}\n\nПопробуйте ввести текстом."

@@ -17,6 +17,10 @@ class ImageResultAction(CallbackData, prefix="image_result"):
     action: str
 
 
+class CreateAspectRatio(CallbackData, prefix="create_ratio"):
+    ratio: str
+
+
 class TopupMethod(CallbackData, prefix="topup_method"):
     method: str
 
