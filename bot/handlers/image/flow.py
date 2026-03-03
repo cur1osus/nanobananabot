@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+import logging
 import uuid
 
+import aiohttp
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
@@ -23,7 +26,7 @@ from bot.utils.image_models import (
     is_image_model_key,
 )
 from bot.utils.image_state import get_image_data, update_image_data
-from bot.utils.image_tasks import generate_image
+from bot.utils.image_tasks import ImageGenerationError, generate_image
 from bot.utils.messaging import edit_or_answer
 from bot.utils.speech_recognition import (
     SpeechRecognitionError,
@@ -33,13 +36,57 @@ from bot.utils.texts import (
     PHOTO_REQUEST_TEXT,
     PROMPT_REQUEST_TEXT,
     generation_started_text,
-    main_menu_text,
     model_panel_text,
 )
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 MAX_PHOTOS = 4
+
+
+async def _download_telegram_file(bot_token: str, file_path: str) -> bytes:
+    url = f"https://api.telegram.org/file/bot{bot_token}/{file_path}"
+    timeout = aiohttp.ClientTimeout(total=60)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url) as response:
+            response.raise_for_status()
+            return await response.read()
+
+
+async def _build_reference_images(message: Message, photo_ids: list[str]) -> list[str]:
+    bot = message.bot
+    if bot is None:
+        return []
+
+    bot_token = getattr(bot, "token", "")
+    if not bot_token:
+        return []
+
+    image_urls: list[str] = []
+    for file_id in photo_ids[:MAX_PHOTOS]:
+        try:
+            file = await bot.get_file(file_id)
+            if not file.file_path:
+                continue
+            image_bytes = await _download_telegram_file(bot_token, file.file_path)
+            image_b64 = base64.b64encode(image_bytes).decode("ascii")
+            image_urls.append(f"data:image/jpeg;base64,{image_b64}")
+        except Exception:
+            logger.exception("Failed to prepare image reference: file_id=%s", file_id)
+
+    return image_urls
+
+
+def _generation_error_text(error: Exception) -> str:
+    details = str(error).strip()
+    if details:
+        details = details[:350]
+        return f"❌ Ошибка при генерации изображения.\n\nДетали API: {details}"
+    return (
+        "❌ Ошибка при генерации изображения. Попробуйте позже.\n\n"
+        "Если ошибка повторяется, обратитесь в поддержку."
+    )
 
 
 @router.callback_query(ModelMenu.filter())
@@ -158,16 +205,16 @@ async def collect_prompt(
         return
 
     # Generate task ID and send "generating" message
-    import uuid
-
     task_id = uuid.uuid4().hex[:8]
     status_msg = await message.answer(generation_started_text(task_id, data.model_key))
 
     try:
+        reference_images = await _build_reference_images(message, data.photos)
+
         # Generate image
         image_bytes = await generate_image(
             prompt=prompt,
-            photo_ids=data.photos,
+            reference_images=reference_images,
             aspect_ratio="1:1",
             output_format="jpeg",
         )
@@ -193,11 +240,12 @@ async def collect_prompt(
         # Delete status message
         await status_msg.delete()
 
+    except ImageGenerationError as e:
+        logger.exception("Image generation API error")
+        await status_msg.edit_text(_generation_error_text(e))
     except Exception as e:
-        await status_msg.edit_text(
-            f"❌ Ошибка при генерации изображения. Попробуйте позже.\n\n"
-            f"Если ошибка повторяется, обратитесь в поддержку."
-        )
+        logger.exception("Unexpected image generation error")
+        await status_msg.edit_text(_generation_error_text(e))
 
     # Reset state
     await update_image_data(state, prompt="", prompt_requested=False, photos=[])
@@ -257,10 +305,12 @@ async def collect_prompt_voice(
         )
 
         try:
+            reference_images = await _build_reference_images(message, data.photos)
+
             # Generate image
             image_bytes = await generate_image(
                 prompt=prompt,
-                photo_ids=data.photos,
+                reference_images=reference_images,
                 aspect_ratio="1:1",
                 output_format="jpeg",
             )
@@ -286,11 +336,12 @@ async def collect_prompt_voice(
             # Delete status message
             await status_msg.delete()
 
+        except ImageGenerationError as e:
+            logger.exception("Image generation API error (voice prompt)")
+            await status_msg.edit_text(_generation_error_text(e))
         except Exception as e:
-            await status_msg.edit_text(
-                f"❌ Ошибка при генерации изображения. Попробуйте позже.\n\n"
-                f"Если ошибка повторяется, обратитесь в поддержку."
-            )
+            logger.exception("Unexpected image generation error (voice prompt)")
+            await status_msg.edit_text(_generation_error_text(e))
 
         # Reset state
         await update_image_data(state, prompt="", prompt_requested=False, photos=[])
@@ -300,7 +351,7 @@ async def collect_prompt_voice(
         await processing_msg.edit_text(
             f"❌ Ошибка распознавания: {e}\n\nПопробуйте ввести текстом."
         )
-    except Exception as e:
+    except Exception:
         await processing_msg.edit_text(
             "❌ Произошла ошибка при обработке голосового сообщения. Попробуйте ввести текстом."
         )

@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import logging
 import uuid
+from binascii import Error as B64DecodeError
 
 import aiohttp
 
@@ -11,26 +12,55 @@ from bot.settings import se
 logger = logging.getLogger(__name__)
 
 
+class ImageGenerationError(RuntimeError):
+    """Errors raised when image generation request fails."""
+
+
+def _resolve_image_backend() -> tuple[str, str, int]:
+    if se.image_backend.api_key:
+        return (
+            se.image_backend.api_key,
+            se.image_backend.base_url.rstrip("/"),
+            se.image_backend.timeout,
+        )
+
+    if se.vsegpt.api_key:
+        return (
+            se.vsegpt.api_key,
+            se.vsegpt.base_url.rstrip("/"),
+            se.vsegpt.timeout,
+        )
+
+    raise ImageGenerationError(
+        "Не настроен ключ API для генерации изображений "
+        "(IMAGE_BACKEND_API_KEY или VSEGPT_API_KEY)."
+    )
+
+
+def _extract_error_message(raw_text: str) -> str:
+    text = raw_text.strip()
+    if not text:
+        return "empty response body"
+    return text[:500]
+
+
 async def generate_image(
     prompt: str,
     photo_ids: list[str] | None = None,
+    reference_images: list[str] | None = None,
     aspect_ratio: str = "1:1",
     output_format: str = "jpeg",
 ) -> bytes:
-    """Generate image using VseGPT API.
+    """Generate image using VseGPT-compatible images API."""
+    del photo_ids
 
-    Uses /images/generations endpoint for image generation.
-    For img-google/nano-banana-2 model:
-    - response_format: "b64_json" (required)
-    - output_format: "jpeg" | "png" (default: "jpeg")
-    - aspect_ratio: "1:1", "16:9", etc.
-    """
+    api_key, base_url, timeout = _resolve_image_backend()
     headers = {
-        "Authorization": f"Bearer {se.image_backend.api_key}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 
-    payload = {
+    payload: dict[str, str] = {
         "model": se.image_backend.model,
         "prompt": prompt,
         "response_format": "b64_json",
@@ -38,24 +68,50 @@ async def generate_image(
         "output_format": output_format,
     }
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            f"{se.image_backend.base_url}/images/generations",
-            headers=headers,
-            json=payload,
-            timeout=aiohttp.ClientTimeout(total=se.image_backend.timeout),
-        ) as response:
-            response.raise_for_status()
-            data = await response.json()
+    if reference_images:
+        for idx, image_data_url in enumerate(reference_images[:10], start=1):
+            key = "image_url" if idx == 1 else f"image{idx}_url"
+            payload[key] = image_data_url
 
-            # Extract base64 image from response
-            # VseGPT returns: {"data": [{"b64_json": "..."}]}
-            if "data" in data and len(data["data"]) > 0:
-                b64_image = data["data"][0].get("b64_json", "")
-                if b64_image:
-                    return base64.b64decode(b64_image)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{base_url}/images/generations",
+                headers=headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=timeout),
+            ) as response:
+                if response.status >= 400:
+                    error_text = _extract_error_message(await response.text())
+                    logger.error(
+                        "Image API request failed: status=%s model=%s body=%s",
+                        response.status,
+                        payload["model"],
+                        error_text,
+                    )
+                    raise ImageGenerationError(
+                        "Ошибка API генерации изображений "
+                        f"({response.status}): {error_text}"
+                    )
 
-            raise RuntimeError(f"No image in API response: {data}")
+                data = await response.json(content_type=None)
+                items = data.get("data") if isinstance(data, dict) else None
+                if isinstance(items, list) and items:
+                    first = items[0] if isinstance(items[0], dict) else {}
+                    b64_image = first.get("b64_json", "")
+                    if isinstance(b64_image, str) and b64_image:
+                        try:
+                            return base64.b64decode(b64_image)
+                        except (ValueError, B64DecodeError) as exc:
+                            raise ImageGenerationError(
+                                "API вернуло некорректные данные изображения."
+                            ) from exc
+
+                raise ImageGenerationError(f"Нет изображения в ответе API: {data}")
+    except aiohttp.ClientError as exc:
+        raise ImageGenerationError(
+            f"Сетевая ошибка при запросе к API генерации: {exc}"
+        ) from exc
 
 
 async def enqueue_fake_image_task(

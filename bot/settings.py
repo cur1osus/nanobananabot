@@ -37,7 +37,7 @@ class ImageBackendSettings:
         self.api_key = os.environ.get("IMAGE_BACKEND_API_KEY", "")
         self.base_url = os.environ.get(
             "IMAGE_BACKEND_BASE_URL",
-            "https://openrouter.ai/api/v1",
+            "https://api.vsegpt.ru/v1",
         )
         self.model = os.environ.get("IMAGE_BACKEND_MODEL", "img-google/nano-banana-2")
         self.timeout = int(os.environ.get("IMAGE_BACKEND_TIMEOUT", 60))
