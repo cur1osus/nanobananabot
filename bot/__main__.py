@@ -117,7 +117,14 @@ async def set_default_commands(bot: Bot, max_retries: int = 3) -> None:
         try:
             await bot.set_my_commands(
                 [
-                    BotCommand(command="start", description="start"),
+                    BotCommand(command="gen", description="Редактировать фото"),
+                    BotCommand(command="create", description="Создать изображение"),
+                    BotCommand(command="model", description="Выбор модели"),
+                    BotCommand(command="buy", description="Пополнить баланс"),
+                    BotCommand(command="example", description="Примеры промптов"),
+                    BotCommand(command="friend", description="Реферальная программа"),
+                    BotCommand(command="help", description="Помощь"),
+                    BotCommand(command="start", description="Перезапустить бота"),
                 ]
             )
             await _set_bot_profile(bot)

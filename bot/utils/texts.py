@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
 
 from bot.db.redis.user_model import UserRD
 from bot.settings import se
@@ -45,6 +44,15 @@ PROMPT_REQUEST_TEXT = (
     "Теперь опишите, что нужно изменить.\n"
     "Например: «Сделай фон закатным, добавь мягкий свет и киношные цвета».\n\n"
     "💡 Можно ввести текстом или продиктовать голосом"
+)
+
+PROMPT_EXAMPLES_TEXT = (
+    "💡 Примеры промптов:\n\n"
+    "1) Сделай фон красным, человека не меняй.\n"
+    "2) Замени фон на офис, сохрани одежду и позу.\n"
+    "3) Сделай фото в стиле кинокадра, мягкий теплый свет.\n"
+    "4) Убери лишние объекты с заднего плана.\n"
+    "5) Улучши качество и резкость, без изменения лица."
 )
 
 
