@@ -40,6 +40,10 @@ class ImageBackendSettings:
             "https://api.vsegpt.ru/v1",
         )
         self.model = os.environ.get("IMAGE_BACKEND_MODEL", "img-google/nano-banana-2")
+        self.edit_model = os.environ.get(
+            "IMAGE_BACKEND_EDIT_MODEL",
+            "img2img-google/nano-banana-2-edit-multi",
+        )
         self.timeout = int(os.environ.get("IMAGE_BACKEND_TIMEOUT", 60))
         self.proxy_url = os.environ.get("IMAGE_BACKEND_PROXY_URL", "")
 

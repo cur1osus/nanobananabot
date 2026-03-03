@@ -66,8 +66,10 @@ async def generate_image(
         "Content-Type": "application/json",
     }
 
+    model = se.image_backend.edit_model if reference_images else se.image_backend.model
+
     payload: dict[str, str] = {
-        "model": se.image_backend.model,
+        "model": model,
         "prompt": prompt,
         "response_format": "b64_json",
         "aspect_ratio": aspect_ratio,
@@ -78,6 +80,13 @@ async def generate_image(
         for idx, image_data_url in enumerate(reference_images[:10], start=1):
             key = "image_url" if idx == 1 else f"image{idx}_url"
             payload[key] = image_data_url
+
+    logger.info(
+        "Image generation request: model=%s refs=%s proxy=%s",
+        model,
+        len(reference_images or []),
+        bool(proxy),
+    )
 
     try:
         async with aiohttp.ClientSession() as session:
