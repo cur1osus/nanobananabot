@@ -41,6 +41,7 @@ class ImageBackendSettings:
         )
         self.model = os.environ.get("IMAGE_BACKEND_MODEL", "img-google/nano-banana-2")
         self.timeout = int(os.environ.get("IMAGE_BACKEND_TIMEOUT", 60))
+        self.proxy_url = os.environ.get("IMAGE_BACKEND_PROXY_URL", "")
 
 
 class AgentPlatformSettings:

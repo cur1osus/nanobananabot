@@ -37,6 +37,11 @@ def _resolve_image_backend() -> tuple[str, str, int]:
     )
 
 
+def _resolve_image_proxy() -> str | None:
+    proxy = se.image_backend.proxy_url.strip()
+    return proxy or None
+
+
 def _extract_error_message(raw_text: str) -> str:
     text = raw_text.strip()
     if not text:
@@ -55,6 +60,7 @@ async def generate_image(
     del photo_ids
 
     api_key, base_url, timeout = _resolve_image_backend()
+    proxy = _resolve_image_proxy()
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -79,6 +85,7 @@ async def generate_image(
                 f"{base_url}/images/generations",
                 headers=headers,
                 json=payload,
+                proxy=proxy,
                 timeout=aiohttp.ClientTimeout(total=timeout),
             ) as response:
                 if response.status >= 400:
