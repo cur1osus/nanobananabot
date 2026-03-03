@@ -52,6 +52,7 @@ def _extract_error_message(raw_text: str) -> str:
 async def generate_image(
     prompt: str,
     photo_ids: list[str] | None = None,
+    model: str | None = None,
     reference_images: list[str] | None = None,
     aspect_ratio: str = "1:1",
     output_format: str = "jpeg",
@@ -66,10 +67,12 @@ async def generate_image(
         "Content-Type": "application/json",
     }
 
-    model = se.image_backend.edit_model if reference_images else se.image_backend.model
+    model_id = model or (
+        se.image_backend.edit_model if reference_images else se.image_backend.model
+    )
 
     payload: dict[str, str] = {
-        "model": model,
+        "model": model_id,
         "prompt": prompt,
         "response_format": "b64_json",
         "aspect_ratio": aspect_ratio,
@@ -83,7 +86,7 @@ async def generate_image(
 
     logger.info(
         "Image generation request: model=%s refs=%s proxy=%s",
-        model,
+        model_id,
         len(reference_images or []),
         bool(proxy),
     )

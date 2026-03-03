@@ -214,6 +214,7 @@ async def collect_prompt(
         # Generate image
         image_bytes = await generate_image(
             prompt=prompt,
+            model=model.api_model,
             reference_images=reference_images,
             aspect_ratio="1:1",
             output_format="jpeg",
@@ -310,6 +311,7 @@ async def collect_prompt_voice(
             # Generate image
             image_bytes = await generate_image(
                 prompt=prompt,
+                model=model.api_model,
                 reference_images=reference_images,
                 aspect_ratio="1:1",
                 output_format="jpeg",
