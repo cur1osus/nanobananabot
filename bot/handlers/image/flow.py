@@ -89,6 +89,27 @@ def _generation_error_text(error: Exception) -> str:
     )
 
 
+async def _send_generation_result(
+    message: Message,
+    *,
+    image_bytes: bytes,
+    model_key: str,
+    model_title: str,
+    model_cost: int,
+    task_id: str,
+) -> None:
+    filename = f"generation_{task_id}_{model_key}.jpg"
+    await message.answer_document(
+        document=BufferedInputFile(file=image_bytes, filename=filename),
+        caption="📎 Файл результата",
+    )
+    await message.answer_photo(
+        photo=BufferedInputFile(file=image_bytes, filename="preview.jpg"),
+        caption=f"✅ Готово!\n🎨 Модель: {model_title}\n💰 Списано: {model_cost} кредитов",
+        reply_markup=await ik_back_home(),
+    )
+
+
 @router.callback_query(ModelMenu.filter())
 async def open_model_menu(
     query: CallbackQuery,
@@ -228,14 +249,13 @@ async def collect_prompt(
             amount=model.cost,
         )
 
-        # Send image to user
-        input_file = BufferedInputFile(
-            file=image_bytes, filename=f"generated_{data.model_key}.jpg"
-        )
-        await message.answer_photo(
-            photo=input_file,
-            caption=f"✅ Готово!\n🎨 Модель: {model.title}\n💰 Списано: {model.cost} кредитов",
-            reply_markup=await ik_back_home(),
+        await _send_generation_result(
+            message,
+            image_bytes=image_bytes,
+            model_key=data.model_key,
+            model_title=model.title,
+            model_cost=model.cost,
+            task_id=task_id,
         )
 
         # Delete status message
@@ -325,14 +345,13 @@ async def collect_prompt_voice(
                 amount=model.cost,
             )
 
-            # Send image to user
-            input_file = BufferedInputFile(
-                file=image_bytes, filename=f"generated_{data.model_key}.jpg"
-            )
-            await message.answer_photo(
-                photo=input_file,
-                caption=f"✅ Готово!\n🎨 Модель: {model.title}\n💰 Списано: {model.cost} кредитов",
-                reply_markup=await ik_back_home(),
+            await _send_generation_result(
+                message,
+                image_bytes=image_bytes,
+                model_key=data.model_key,
+                model_title=model.title,
+                model_cost=model.cost,
+                task_id=task_id,
             )
 
             # Delete status message
