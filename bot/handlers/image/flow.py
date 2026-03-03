@@ -41,7 +41,6 @@ from bot.utils.speech_recognition import (
 )
 from bot.utils.texts import (
     CREATE_PROMPT_TEXT,
-    PHOTO_REQUEST_TEXT,
     PROMPT_REQUEST_TEXT,
     generation_started_text,
     model_panel_text,
@@ -50,7 +49,8 @@ from bot.utils.texts import (
 router = Router()
 logger = logging.getLogger(__name__)
 
-MAX_PHOTOS = 4
+DEFAULT_MAX_REFERENCES = 4
+NANO2_MAX_REFERENCES = 8
 
 CREATE_RATIO_MAP: dict[str, str] = {
     "auto": "auto",
@@ -65,6 +65,17 @@ CREATE_RATIO_MAP: dict[str, str] = {
     "2x3": "2:3",
     "9x16": "9:16",
 }
+
+
+def _photo_limit_for_model(model_key: str) -> int:
+    if model_key == "nano2":
+        return NANO2_MAX_REFERENCES
+    return DEFAULT_MAX_REFERENCES
+
+
+def _photo_request_text(model_key: str) -> str:
+    max_refs = _photo_limit_for_model(model_key)
+    return f"Пришлите 1-{max_refs} фотографий которые нужно изменить или объединить"
 
 
 async def _download_telegram_file(bot_token: str, file_path: str) -> bytes:
@@ -86,7 +97,7 @@ async def _build_reference_images(message: Message, photo_ids: list[str]) -> lis
         return []
 
     image_urls: list[str] = []
-    for file_id in photo_ids[:MAX_PHOTOS]:
+    for file_id in photo_ids[:10]:
         try:
             file = await bot.get_file(file_id)
             if not file.file_path:
@@ -154,7 +165,7 @@ async def _run_image_generation(
     data = await get_image_data(state)
     if not data.photos:
         await state.set_state(ImageGenerationState.waiting_photos)
-        await message.answer(PHOTO_REQUEST_TEXT)
+        await message.answer(_photo_request_text(data.model_key))
         return
 
     model = get_image_model(data.model_key)
@@ -318,7 +329,7 @@ async def select_model(
     await state.set_state(ImageGenerationState.waiting_photos)
     await edit_or_answer(
         query,
-        text=f"{model_panel_text(user, callback_data.model)}\n\n{PHOTO_REQUEST_TEXT}",
+        text=f"{model_panel_text(user, callback_data.model)}\n\n{_photo_request_text(callback_data.model)}",
         reply_markup=await ik_image_waiting_photos(),
     )
     await query.answer()
@@ -327,8 +338,10 @@ async def select_model(
 @router.message(ImageGenerationState.waiting_photos, F.text)
 async def remind_photos(
     message: Message,
+    state: FSMContext,
 ) -> None:
-    await message.answer(PHOTO_REQUEST_TEXT)
+    data = await get_image_data(state)
+    await message.answer(_photo_request_text(data.model_key))
 
 
 @router.callback_query(ImageResultAction.filter())
@@ -388,7 +401,7 @@ async def handle_result_actions(
         await query.answer()
         if isinstance(query.message, Message):
             await query.message.answer(
-                PHOTO_REQUEST_TEXT,
+                _photo_request_text(data.model_key),
                 reply_markup=await ik_image_waiting_photos(),
             )
         return
@@ -404,8 +417,9 @@ async def collect_photos(
 ) -> None:
     data = await get_image_data(state)
     photos = list(data.photos)
-    if len(photos) >= MAX_PHOTOS:
-        await message.answer("Можно отправить максимум 4 фото.")
+    max_references = _photo_limit_for_model(data.model_key)
+    if len(photos) >= max_references:
+        await message.answer(f"Можно отправить максимум {max_references} фото.")
         return
     if not message.photo:
         return
@@ -428,8 +442,10 @@ async def collect_photos(
         prompt_requested=prompt_requested,
     )
 
-    if len(photos) >= MAX_PHOTOS:
-        await message.answer("Получено 4 фото. Теперь пришлите текстовый промпт.")
+    if len(photos) >= max_references:
+        await message.answer(
+            f"Получено {max_references} фото. Теперь пришлите текстовый промпт."
+        )
 
 
 @router.message(ImageGenerationState.waiting_prompt, F.text)
