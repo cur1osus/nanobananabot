@@ -14,7 +14,7 @@ IMAGE_STATE_KEY = "image_flow"
 class ImageFlowData:
     model_key: str = DEFAULT_IMAGE_MODEL_KEY
     photos: list[str] = field(default_factory=list)
-    aspect_ratio: str = "1:1"
+    aspect_ratio: str = "auto"
     prompt: str = ""
     prompt_requested: bool = False
 
@@ -28,7 +28,7 @@ class ImageFlowData:
         return cls(
             model_key=model_key,
             photos=photos,
-            aspect_ratio=str(raw.get("aspect_ratio", "1:1")) or "1:1",
+            aspect_ratio=str(raw.get("aspect_ratio", "auto")) or "auto",
             prompt=str(raw.get("prompt", "")),
             prompt_requested=bool(raw.get("prompt_requested", False)),
         )
