@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
@@ -169,26 +170,35 @@ def _format_period(start: datetime, end: datetime) -> str:
 
 
 async def _fetch_all_gpt_balances() -> str:
-    image_balance = await _fetch_balance_by_endpoint(
-        label="Image backend",
-        api_key=se.image_backend.api_key,
-        base_url=se.image_backend.base_url,
+    results = await asyncio.gather(
+        _fetch_balance_by_endpoint(
+            label="Image backend",
+            api_key=se.image_backend.api_key,
+            base_url=se.image_backend.base_url,
+        ),
+        _fetch_balance_by_endpoint(
+            label="VseGpt",
+            api_key=se.vsegpt.api_key,
+            base_url=se.vsegpt.base_url,
+        ),
+        _fetch_balance_by_endpoint(
+            label="Agent platform",
+            api_key=se.agent_platform.api_key,
+            base_url=se.agent_platform.base_url,
+        ),
+        return_exceptions=True,
     )
-    vsegpt_balance = await _fetch_balance_by_endpoint(
-        label="VseGpt",
-        api_key=se.vsegpt.api_key,
-        base_url=se.vsegpt.base_url,
-    )
-    agent_balance = await _fetch_balance_by_endpoint(
-        label="Agent platform",
-        api_key=se.agent_platform.api_key,
-        base_url=se.agent_platform.base_url,
-    )
-    return (
-        f"• {image_balance}\n"
-        f"• {vsegpt_balance}\n"
-        f"• {agent_balance}"
-    )
+
+    lines: list[str] = []
+    labels = ["Image backend", "VseGpt", "Agent platform"]
+    for label, item in zip(labels, results):
+        if isinstance(item, Exception):
+            logger.warning("Не удалось получить баланс %s: %s", label, item)
+            lines.append(f"• {label}: недоступно")
+        else:
+            lines.append(f"• {item}")
+
+    return "\n".join(lines)
 
 
 async def _fetch_balance_by_endpoint(*, label: str, api_key: str, base_url: str) -> str:
@@ -202,7 +212,7 @@ async def _fetch_balance_by_endpoint(*, label: str, api_key: str, base_url: str)
     }
 
     try:
-        timeout = aiohttp.ClientTimeout(total=15)
+        timeout = aiohttp.ClientTimeout(total=4)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url, headers=headers) as response:
                 if response.status != 200:

@@ -40,4 +40,4 @@ async def edit_or_answer(
         reply_markup=reply_markup,
     ):
         return
-    await query.answer(text="Слишком быстро!", show_alert=True)
+    await query.message.answer(text=text, reply_markup=reply_markup)
