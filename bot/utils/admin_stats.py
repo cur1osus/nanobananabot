@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
+import aiohttp
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +14,7 @@ from bot.db.models import TransactionModel, UserModel
 from bot.db.redis.user_model import UserRD
 from bot.utils.formatting import format_rub
 from bot.utils.payments import CARD_CURRENCY, STARS_CURRENCY
-from bot.utils.speech_recognition import SpeechRecognitionError, get_vsegpt_balance
+from bot.settings import se
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
@@ -77,14 +78,14 @@ async def build_admin_info_text(
         bounds.prev_end,
     )
 
-    vsegpt_credits = await _fetch_vsegpt_credits()
+    gpt_balances = await _fetch_all_gpt_balances()
 
     return (
         f"📊 Инфо — период: \n{period_label}\n\n"
         f"Продажи (карта): {_format_sales_by_currency(sales_current, sales_prev, CARD_CURRENCY)}\n"
         f"Продажи (звезды): {_format_sales_by_currency(sales_current, sales_prev, STARS_CURRENCY)}\n"
         f"Выводы реферерам: {format_rub(withdrawals_current)} р. ({_format_delta_rub(withdrawals_current - withdrawals_prev)})\n\n"
-        f"Кредиты VseGpt: {vsegpt_credits}\n\n"
+        f"Баланс GPT:\n{gpt_balances}\n\n"
         f"Всего пользователей: {total_users} (+{new_users})\n"
         f"Онлайн ({ONLINE_MINUTES} мин): {online_users}"
     )
@@ -167,13 +168,66 @@ def _format_period(start: datetime, end: datetime) -> str:
     return f"{start:%d.%m.%Y %H:%M} — {end:%d.%m.%Y %H:%M}"
 
 
-async def _fetch_vsegpt_credits() -> str:
+async def _fetch_all_gpt_balances() -> str:
+    image_balance = await _fetch_balance_by_endpoint(
+        label="Image backend",
+        api_key=se.image_backend.api_key,
+        base_url=se.image_backend.base_url,
+    )
+    vsegpt_balance = await _fetch_balance_by_endpoint(
+        label="VseGpt",
+        api_key=se.vsegpt.api_key,
+        base_url=se.vsegpt.base_url,
+    )
+    agent_balance = await _fetch_balance_by_endpoint(
+        label="Agent platform",
+        api_key=se.agent_platform.api_key,
+        base_url=se.agent_platform.base_url,
+    )
+    return (
+        f"• {image_balance}\n"
+        f"• {vsegpt_balance}\n"
+        f"• {agent_balance}"
+    )
+
+
+async def _fetch_balance_by_endpoint(*, label: str, api_key: str, base_url: str) -> str:
+    if not api_key:
+        return f"{label}: ключ не задан"
+
+    url = f"{base_url.rstrip('/')}/balance"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
     try:
-        credits = await get_vsegpt_balance()
-    except SpeechRecognitionError as err:
-        logger.warning("Не удалось получить кредиты VseGpt: %s", err)
-        return "недоступно"
-    return f"{credits:.2f}"
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=headers) as response:
+                if response.status != 200:
+                    text = await response.text()
+                    logger.warning(
+                        "Не удалось получить баланс %s: %s %s",
+                        label,
+                        response.status,
+                        text[:160],
+                    )
+                    return f"{label}: недоступно"
+                data = await response.json()
+    except Exception as err:
+        logger.warning("Не удалось получить баланс %s: %s", label, err)
+        return f"{label}: недоступно"
+
+    credits_data = data.get("data", {})
+    credits = credits_data.get("credits")
+    if credits is None:
+        return f"{label}: недоступно"
+
+    try:
+        return f"{label}: {float(credits):.2f}"
+    except (TypeError, ValueError):
+        return f"{label}: {credits}"
 
 
 def _format_delta_int(value: int) -> str:
