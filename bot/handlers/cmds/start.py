@@ -6,9 +6,8 @@ from aiogram import Router
 from aiogram.filters import CommandObject, CommandStart
 
 from bot.db.redis.user_model import UserRD
-from bot.keyboards.inline import ik_choose_model
+from bot.utils.menu_ui import send_main_menu
 from bot.utils.referrals import apply_referral
-from bot.utils.texts import nanobanana_welcome_text
 
 if TYPE_CHECKING:
     from aiogram.fsm.context import FSMContext
@@ -42,10 +41,7 @@ async def start_cmd_with_deep_link(
         )
     if applied:
         await message.answer("Ты воспользовался реферальной ссылкой!")
-    await message.answer(
-        nanobanana_welcome_text(),
-        reply_markup=await ik_choose_model(),
-    )
+    await send_main_menu(message, user)
 
 
 @router.message(CommandStart(deep_link=False))
@@ -55,7 +51,4 @@ async def start_cmd(
     state: FSMContext,
 ) -> None:
     await state.clear()
-    await message.answer(
-        nanobanana_welcome_text(),
-        reply_markup=await ik_choose_model(),
-    )
+    await send_main_menu(message, user)

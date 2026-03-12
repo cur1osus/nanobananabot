@@ -153,6 +153,10 @@ async def ik_create_aspect_ratio() -> InlineKeyboardMarkup:
 async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
+        text="🖌 Редактировать фото",
+        callback_data=MenuAction(action="edit").pack(),
+    )
+    builder.button(
         text="🍌 Создать изображение",
         callback_data=MenuAction(action="image").pack(),
     )

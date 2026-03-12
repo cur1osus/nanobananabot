@@ -56,3 +56,28 @@ async def menu_image(
         text=model_panel_text(user, selected_key),
         reply_markup=await ik_image_model_select(selected_key),
     )
+
+
+@router.callback_query(MenuAction.filter(F.action == "edit"))
+async def menu_edit(
+    query: CallbackQuery,
+    state: FSMContext,
+    user: UserRD,
+) -> None:
+    data = await get_image_data(state)
+    selected_key = data.model_key or DEFAULT_IMAGE_MODEL_KEY
+    await state.clear()
+    await update_image_data(
+        state,
+        model_key=selected_key,
+        photos=[],
+        prompt="",
+        prompt_requested=False,
+        aspect_ratio="auto",
+    )
+    await query.answer()
+    await edit_or_answer(
+        query,
+        text=model_panel_text(user, selected_key),
+        reply_markup=await ik_image_model_select(selected_key),
+    )
