@@ -170,27 +170,34 @@ def _format_period(start: datetime, end: datetime) -> str:
 
 
 async def _fetch_all_gpt_balances() -> str:
+    shared_key = se.image_backend.api_key
+    shared_base = se.image_backend.base_url
+
     results = await asyncio.gather(
         _fetch_balance_by_endpoint(
             label="Image backend",
-            api_key=se.image_backend.api_key,
-            base_url=se.image_backend.base_url,
+            api_key=shared_key,
+            base_url=shared_base,
         ),
         _fetch_balance_by_endpoint(
             label="VseGpt",
-            api_key=se.vsegpt.api_key,
-            base_url=se.vsegpt.base_url,
+            api_key=se.vsegpt.api_key or shared_key,
+            base_url=se.vsegpt.base_url or shared_base,
         ),
         _fetch_balance_by_endpoint(
             label="Agent platform",
-            api_key=se.agent_platform.api_key,
-            base_url=se.agent_platform.base_url,
+            api_key=se.agent_platform.api_key or shared_key,
+            base_url=se.agent_platform.base_url or shared_base,
         ),
         return_exceptions=True,
     )
 
     lines: list[str] = []
-    labels = ["Image backend", "VseGpt", "Agent platform"]
+    labels = [
+        "Image backend",
+        "VseGpt" + (" (через общий ключ)" if not se.vsegpt.api_key else ""),
+        "Agent platform" + (" (через общий ключ)" if not se.agent_platform.api_key else ""),
+    ]
     for label, item in zip(labels, results):
         if isinstance(item, Exception):
             logger.warning("Не удалось получить баланс %s: %s", label, item)
