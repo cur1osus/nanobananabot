@@ -8,6 +8,7 @@ class BaseUserState(StatesGroup):
 class ImageGenerationState(StatesGroup):
     waiting_photos = State()
     waiting_prompt = State()
+    waiting_create_model = State()
     waiting_create_aspect = State()
     waiting_create_prompt = State()
     processing = State()

@@ -40,6 +40,7 @@ from bot.utils.speech_recognition import (
     transcribe_message_audio,
 )
 from bot.utils.texts import (
+    CREATE_ASPECT_RATIO_TEXT,
     CREATE_PROMPT_TEXT,
     PROMPT_REQUEST_TEXT,
     generation_started_text,
@@ -318,6 +319,8 @@ async def select_model(
         )
         return
 
+    current_state = await state.get_state()
+
     await update_image_data(
         state,
         model_key=callback_data.model,
@@ -326,13 +329,39 @@ async def select_model(
         prompt="",
         prompt_requested=False,
     )
-    await state.set_state(ImageGenerationState.waiting_photos)
-    await edit_or_answer(
-        query,
-        text=f"{model_panel_text(user, callback_data.model)}\n\n{_photo_request_text(callback_data.model)}",
-        reply_markup=await ik_image_waiting_photos(),
-    )
+
+    if current_state == ImageGenerationState.waiting_create_model.state:
+        await state.set_state(ImageGenerationState.waiting_create_aspect)
+        await edit_or_answer(
+            query,
+            text=CREATE_ASPECT_RATIO_TEXT,
+            reply_markup=await ik_create_aspect_ratio(),
+        )
+    else:
+        await state.set_state(ImageGenerationState.waiting_photos)
+        await edit_or_answer(
+            query,
+            text=(
+                f"{model_panel_text(user, callback_data.model)}\n\n"
+                f"{_photo_request_text(callback_data.model)}"
+            ),
+            reply_markup=await ik_image_waiting_photos(),
+        )
     await query.answer()
+
+
+@router.message(ImageGenerationState.waiting_create_model)
+async def remind_create_model(
+    message: Message,
+    state: FSMContext,
+    user: UserRD,
+) -> None:
+    data = await get_image_data(state)
+    selected_key = data.model_key or DEFAULT_IMAGE_MODEL_KEY
+    await message.answer(
+        model_panel_text(user, selected_key),
+        reply_markup=await ik_image_model_select(selected_key),
+    )
 
 
 @router.message(ImageGenerationState.waiting_photos, F.text)

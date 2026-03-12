@@ -15,7 +15,6 @@ from bot.db.enum import TransactionStatus, TransactionType
 from bot.db.models import TransactionModel, UserModel
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.inline import (
-    ik_create_aspect_ratio,
     ik_earn_menu,
     ik_how_menu,
     ik_image_model_select,
@@ -26,7 +25,6 @@ from bot.utils.image_models import DEFAULT_IMAGE_MODEL_KEY
 from bot.utils.image_state import get_image_data, update_image_data
 from bot.utils.texts import (
     CONTACTS_TEXT,
-    CREATE_ASPECT_RATIO_TEXT,
     PROMPT_EXAMPLES_TEXT,
     TOPUP_METHODS_TEXT,
     earn_text,
@@ -57,9 +55,10 @@ async def cmd_gen(message: Message, state: FSMContext, user: UserRD) -> None:
 
 
 @router.message(Command("create"))
-async def cmd_create(message: Message, state: FSMContext) -> None:
+async def cmd_create(message: Message, state: FSMContext, user: UserRD) -> None:
     data = await get_image_data(state)
     selected_key = data.model_key or DEFAULT_IMAGE_MODEL_KEY
+    await state.clear()
     await update_image_data(
         state,
         model_key=selected_key,
@@ -68,10 +67,10 @@ async def cmd_create(message: Message, state: FSMContext) -> None:
         prompt_requested=False,
         aspect_ratio="auto",
     )
-    await state.set_state(ImageGenerationState.waiting_create_aspect)
+    await state.set_state(ImageGenerationState.waiting_create_model)
     await message.answer(
-        CREATE_ASPECT_RATIO_TEXT,
-        reply_markup=await ik_create_aspect_ratio(),
+        model_panel_text(user, selected_key),
+        reply_markup=await ik_image_model_select(selected_key),
     )
 
 
