@@ -153,11 +153,11 @@ async def ik_create_aspect_ratio() -> InlineKeyboardMarkup:
 async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="🖌 Редактировать фото",
+        text="🖌 Редактирование фото",
         callback_data=MenuAction(action="edit").pack(),
     )
     builder.button(
-        text="🍌 Создать изображение",
+        text="✨ Генерация изображения",
         callback_data=MenuAction(action="image").pack(),
     )
     builder.button(
@@ -188,7 +188,7 @@ async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:
 async def ik_how_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="🍌 Создать изображение",
+        text="✨ Генерация изображения",
         callback_data=MenuAction(action="image").pack(),
     )
     builder.button(
@@ -228,7 +228,7 @@ async def ik_topup_plans(method: str) -> InlineKeyboardMarkup:
     currency_label = method_info.currency_label if method_info else "руб."
     for tariff in tariffs:
         builder.button(
-            text=(f"{tariff.credits} генераций - {tariff.price} {currency_label}"),
+            text=(f"{tariff.credits} кредитов - {tariff.price} {currency_label}"),
             callback_data=TopupPlan(method=method, plan=tariff.plan).pack(),
         )
     builder.button(

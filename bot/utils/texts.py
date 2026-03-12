@@ -8,7 +8,7 @@ from bot.settings import se
 from bot.utils.formatting import format_rub
 
 MAIN_MENU_TEXT = (
-    "🏠 Главное меню\n💰 Ваш баланс: {credits} генераций\n🖼 Что вы хотите сделать?"
+    "🏠 Главное меню\n💰 Ваш баланс: {credits} кредитов\n🖼 Что вы хотите сделать?"
 )
 
 BOT_INFO_TEXT = (
@@ -225,7 +225,10 @@ def topup_tariffs_text(method: str) -> str:
         method_line = "⭐️ Купите генерации за звёзды."
     else:
         method_line = "💳 Купите генерации за рубли."
-    return f"💳 Пополнить баланс\n\n{method_line}\n\n🖼 Генерация изображений"
+    return (
+        f"💳 Пополнить баланс\n\n{method_line}\n\n"
+        "🖌 Редактирование и генерация изображений"
+    )
 
 
 def main_menu_text(user: UserRD) -> str:
