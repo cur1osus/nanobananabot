@@ -83,7 +83,7 @@ def model_panel_text(user: UserRD, model_key: str) -> str:
 
     model = get_image_model(model_key)
     return (
-        "Выберите модель для генерации.\n"
+        "Выберите модель.\n"
         f"Текущая модель: {model.title}\n"
         f"Стоимость: {format_generations(model.cost)}\n"
         f"Баланс: {format_generations(user.credits)}"
