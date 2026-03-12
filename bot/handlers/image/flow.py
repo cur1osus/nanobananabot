@@ -15,6 +15,7 @@ from bot.db.func import deduct_user_credits
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import (
     CreateAspectRatio,
+    ImageNav,
     ImageResultAction,
     ModelMenu,
     ModelSelect,
@@ -22,9 +23,11 @@ from bot.keyboards.factories import (
 from bot.keyboards.inline import (
     ik_back_home,
     ik_create_aspect_ratio,
+    ik_create_prompt_nav,
     ik_image_model_select,
     ik_image_result_actions,
     ik_image_waiting_photos,
+    ik_prompt_nav,
 )
 from bot.states import ImageGenerationState
 from bot.utils.image_models import (
@@ -370,7 +373,43 @@ async def remind_photos(
     state: FSMContext,
 ) -> None:
     data = await get_image_data(state)
-    await message.answer(_photo_request_text(data.model_key))
+    await message.answer(
+        _photo_request_text(data.model_key),
+        reply_markup=await ik_image_waiting_photos(),
+    )
+
+
+@router.callback_query(ImageNav.filter())
+async def handle_image_nav(
+    query: CallbackQuery,
+    callback_data: ImageNav,
+    state: FSMContext,
+    user: UserRD,
+) -> None:
+    data = await get_image_data(state)
+    selected_key = data.model_key or DEFAULT_IMAGE_MODEL_KEY
+
+    if callback_data.action == "to_photos":
+        await state.set_state(ImageGenerationState.waiting_photos)
+        await query.answer()
+        await edit_or_answer(
+            query,
+            text=_photo_request_text(selected_key),
+            reply_markup=await ik_image_waiting_photos(),
+        )
+        return
+
+    if callback_data.action == "to_create_aspect":
+        await state.set_state(ImageGenerationState.waiting_create_aspect)
+        await query.answer()
+        await edit_or_answer(
+            query,
+            text=CREATE_ASPECT_RATIO_TEXT,
+            reply_markup=await ik_create_aspect_ratio(),
+        )
+        return
+
+    await query.answer("Неизвестное действие", show_alert=True)
 
 
 @router.callback_query(ImageResultAction.filter())
@@ -461,7 +500,10 @@ async def collect_photos(
     prompt_requested = data.prompt_requested
     if not prompt_requested:
         prompt_requested = True
-        await message.answer(PROMPT_REQUEST_TEXT)
+        await message.answer(
+            PROMPT_REQUEST_TEXT,
+            reply_markup=await ik_prompt_nav(),
+        )
         await state.set_state(ImageGenerationState.waiting_prompt)
 
     await update_image_data(
@@ -572,7 +614,19 @@ async def select_create_aspect_ratio(
     )
     await state.set_state(ImageGenerationState.waiting_create_prompt)
     await query.answer()
-    await edit_or_answer(query, text=CREATE_PROMPT_TEXT)
+    await edit_or_answer(
+        query,
+        text=CREATE_PROMPT_TEXT,
+        reply_markup=await ik_create_prompt_nav(),
+    )
+
+
+@router.message(ImageGenerationState.waiting_create_prompt, F.photo)
+async def remind_create_prompt_photo(message: Message) -> None:
+    await message.answer(
+        "В режиме создания фото не нужны. Пришлите только текстовый промпт.",
+        reply_markup=await ik_create_prompt_nav(),
+    )
 
 
 @router.message(ImageGenerationState.waiting_create_prompt, F.text)

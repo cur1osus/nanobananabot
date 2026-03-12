@@ -5,6 +5,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.keyboards.factories import (
     CreateAspectRatio,
+    ImageNav,
     ImageResultAction,
     InfoPeriod,
     MenuAction,
@@ -49,6 +50,10 @@ async def ik_image_model_select(
             text=_model_button_label(option.key, selected_key),
             callback_data=ModelSelect(model=option.key).pack(),
         )
+    builder.button(
+        text="🏠 В главное меню",
+        callback_data=MenuAction(action="home").pack(),
+    )
     builder.adjust(1)
     return builder.as_markup()
 
@@ -58,6 +63,10 @@ async def ik_image_waiting_photos() -> InlineKeyboardMarkup:
     builder.button(
         text="🔙 К выбору модели",
         callback_data=ModelMenu().pack(),
+    )
+    builder.button(
+        text="🏠 В главное меню",
+        callback_data=MenuAction(action="home").pack(),
     )
     builder.adjust(1)
     return builder.as_markup()
@@ -76,6 +85,34 @@ async def ik_image_result_actions() -> InlineKeyboardMarkup:
     builder.button(
         text="🖼 Начать заново",
         callback_data=ImageResultAction(action="restart").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_prompt_nav() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="🔙 К фото",
+        callback_data=ImageNav(action="to_photos").pack(),
+    )
+    builder.button(
+        text="🏠 В главное меню",
+        callback_data=MenuAction(action="home").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_create_prompt_nav() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="🔙 К выбору формата",
+        callback_data=ImageNav(action="to_create_aspect").pack(),
+    )
+    builder.button(
+        text="🏠 В главное меню",
+        callback_data=MenuAction(action="home").pack(),
     )
     builder.adjust(1)
     return builder.as_markup()
@@ -101,7 +138,15 @@ async def ik_create_aspect_ratio() -> InlineKeyboardMarkup:
             text=label,
             callback_data=CreateAspectRatio(ratio=ratio).pack(),
         )
-    builder.adjust(2, 3, 3, 3)
+    builder.button(
+        text="🔙 К выбору модели",
+        callback_data=ModelMenu().pack(),
+    )
+    builder.button(
+        text="🏠 В главное меню",
+        callback_data=MenuAction(action="home").pack(),
+    )
+    builder.adjust(2, 3, 3, 3, 1, 1)
     return builder.as_markup()
 
 
