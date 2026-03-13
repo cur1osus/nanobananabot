@@ -11,6 +11,26 @@ from bot.settings import se
 
 logger = logging.getLogger(__name__)
 
+_ALLOWED_ASPECT_RATIOS = {
+    "21:9",
+    "16:9",
+    "3:2",
+    "4:3",
+    "5:4",
+    "1:1",
+    "4:5",
+    "3:4",
+    "2:3",
+    "9:16",
+}
+
+
+def _normalize_aspect_ratio(value: str | None) -> str:
+    ratio = str(value or "").strip()
+    if ratio == "auto" or ratio not in _ALLOWED_ASPECT_RATIOS:
+        return "1:1"
+    return ratio
+
 
 class ImageGenerationError(RuntimeError):
     """Errors raised when image generation request fails."""
@@ -71,11 +91,13 @@ async def generate_image(
         se.image_backend.edit_model if reference_images else se.image_backend.model
     )
 
+    normalized_aspect_ratio = _normalize_aspect_ratio(aspect_ratio)
+
     payload: dict[str, str] = {
         "model": model_id,
         "prompt": prompt,
         "response_format": "b64_json",
-        "aspect_ratio": aspect_ratio,
+        "aspect_ratio": normalized_aspect_ratio,
         "output_format": output_format,
     }
 
