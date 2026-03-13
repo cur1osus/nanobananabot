@@ -106,7 +106,7 @@ class TopupSettings:
     def __init__(self) -> None:
         self.tariffs_card_raw = os.environ.get(
             "TOPUP_TARIFFS_CARD",
-            "10:10:6:3,20:20:20:10,30:30:50:25,40:40:120:60",
+            "99:99:30:30,199:199:65:65,499:499:170:170,799:799:270:270,1499:1499:540:540",
         )
         self.tariffs_stars_raw = os.environ.get(
             "TOPUP_TARIFFS_STARS",
