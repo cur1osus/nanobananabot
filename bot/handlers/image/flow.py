@@ -116,10 +116,7 @@ async def _build_reference_images(message: Message, photo_ids: list[str]) -> lis
 
 
 def _generation_error_text(error: Exception) -> str:
-    details = str(error).strip()
-    if details:
-        details = details[:350]
-        return f"❌ Ошибка при генерации изображения.\n\nДетали API: {details}"
+    logger.warning("Public image generation error hidden from user: %s", error)
     return (
         "❌ Ошибка при генерации изображения. Попробуйте позже.\n\n"
         "Если ошибка повторяется, обратитесь в поддержку."
