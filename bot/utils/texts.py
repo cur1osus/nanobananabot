@@ -13,14 +13,12 @@ MAIN_MENU_TEXT = (
 
 BOT_INFO_TEXT = (
     "Bum Ai Bot 🤖 — редактирование и генерация изображений.\n\n"
-    "Поддержка: @NanoBanana_support"
+    "Поддержка: @maxggor"
 )
 
 CONTACTS_TEXT = (
     "📞 Контакты\n\n"
-    "Служба поддержки: @NanoBanana_support\n"
-    "Официальный канал: @NanoBanana_official\n"
-    "Чат: @NanoBanana_chat"
+    "Служба поддержки: @maxggor"
 )
 
 
@@ -34,7 +32,7 @@ BOT_DESCRIPTION_TEXT = (
     "1) Нажмите /start\n"
     "2) Выберите «Редактирование фото» или «Генерация изображения»\n"
     "3) Следуйте подсказкам бота\n\n"
-    "Поддержка: @NanoBanana_support"
+    "Поддержка: @maxggor"
 )
 
 NANOBANANA_WELCOME_TEXT = (
