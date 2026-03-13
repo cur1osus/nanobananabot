@@ -32,7 +32,7 @@ def _receipt_amount_value(price_rub: int) -> str:
 
 def build_yookassa_provider_data(*, tariff: TopupTariff) -> str:
     item = {
-        "description": f"Пополнение: {tariff.credits} Hit$",
+        "description": f"Пополнение: {tariff.credits} кредитов",
         "quantity": 1,
         "amount": {
             "value": _receipt_amount_value(tariff.price),
@@ -68,8 +68,8 @@ def build_invoice(
     method: TopupMethodInfo,
     tariff: TopupTariff,
 ) -> InvoiceConfig:
-    title = f"Пополнение: {tariff.credits} Hit$"
-    description = f"{tariff.credits} Hit$ ({tariff.songs} генераций песен)"
+    title = f"Пополнение: {tariff.credits} кредитов"
+    description = f"{tariff.credits} кредитов ({tariff.songs} генераций песен)"
     payload = build_payload(method.key, tariff.plan)
     if method.key == "stars":
         currency = STARS_CURRENCY

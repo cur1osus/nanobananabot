@@ -37,7 +37,7 @@ async def menu_earn(
         encode=False,
     )
     share_text = (
-        "Приглашайте друзей и получайте 20% от всех их платежей в течение года!"
+        "Приглашайте друзей и получайте 30% от всех их платежей в течение года!"
     )
     referrals_count = await session.scalar(
         select(func.count(UserModel.user_id)).where(

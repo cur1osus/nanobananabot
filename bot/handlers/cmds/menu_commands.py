@@ -154,7 +154,7 @@ async def cmd_friend(
         ref_link=ref_link,
     )
     share_text = (
-        "Приглашайте друзей и получайте 20% от всех их платежей в течение года!"
+        "Приглашайте друзей и получайте 30% от всех их платежей в течение года!"
     )
     share_url = f"https://t.me/share/url?url={quote(ref_link)}&text={quote(share_text)}"
     await message.answer(
