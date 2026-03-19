@@ -44,7 +44,7 @@ class ImageBackendSettings:
         )
         self.model = os.environ.get(
             "IMAGE_BACKEND_MODEL",
-            "gemini-3.1-flash-image-preview",
+            "gemini-2.5-flash-image",
         )
         self.edit_model = os.environ.get(
             "IMAGE_BACKEND_EDIT_MODEL",
