@@ -34,15 +34,21 @@ class DBSettings:
 
 class ImageBackendSettings:
     def __init__(self) -> None:
+        self.provider = (
+            os.environ.get("IMAGE_BACKEND_PROVIDER", "google").strip().lower()
+        )
         self.api_key = os.environ.get("IMAGE_BACKEND_API_KEY", "")
         self.base_url = os.environ.get(
             "IMAGE_BACKEND_BASE_URL",
-            "https://api.vsegpt.ru/v1",
+            "https://generativelanguage.googleapis.com/v1beta",
         )
-        self.model = os.environ.get("IMAGE_BACKEND_MODEL", "img-google/nano-banana-2")
+        self.model = os.environ.get(
+            "IMAGE_BACKEND_MODEL",
+            "gemini-2.5-flash-image",
+        )
         self.edit_model = os.environ.get(
             "IMAGE_BACKEND_EDIT_MODEL",
-            "img2img-google/nano-banana-2-edit-multi",
+            "gemini-3.1-flash-image-preview",
         )
         self.timeout = int(os.environ.get("IMAGE_BACKEND_TIMEOUT", 60))
         self.proxy_url = os.environ.get("IMAGE_BACKEND_PROXY_URL", "")

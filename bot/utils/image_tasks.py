@@ -11,55 +11,9 @@ from bot.settings import se
 
 logger = logging.getLogger(__name__)
 
-_ALLOWED_ASPECT_RATIOS = {
-    "21:9",
-    "16:9",
-    "3:2",
-    "4:3",
-    "5:4",
-    "1:1",
-    "4:5",
-    "3:4",
-    "2:3",
-    "9:16",
-}
-
-
-def _normalize_aspect_ratio(value: str | None) -> str:
-    ratio = str(value or "").strip()
-    if ratio == "auto" or ratio not in _ALLOWED_ASPECT_RATIOS:
-        return "1:1"
-    return ratio
-
 
 class ImageGenerationError(RuntimeError):
     """Errors raised when image generation request fails."""
-
-
-def _resolve_image_backend() -> tuple[str, str, int]:
-    if se.image_backend.api_key:
-        return (
-            se.image_backend.api_key,
-            se.image_backend.base_url.rstrip("/"),
-            se.image_backend.timeout,
-        )
-
-    if se.vsegpt.api_key:
-        return (
-            se.vsegpt.api_key,
-            se.vsegpt.base_url.rstrip("/"),
-            se.vsegpt.timeout,
-        )
-
-    raise ImageGenerationError(
-        "Не настроен ключ API для генерации изображений "
-        "(IMAGE_BACKEND_API_KEY или VSEGPT_API_KEY)."
-    )
-
-
-def _resolve_image_proxy() -> str | None:
-    proxy = se.image_backend.proxy_url.strip()
-    return proxy or None
 
 
 def _extract_error_message(raw_text: str) -> str:
@@ -67,6 +21,42 @@ def _extract_error_message(raw_text: str) -> str:
     if not text:
         return "empty response body"
     return text[:500]
+
+
+def _parse_data_url(data_url: str) -> tuple[str, str]:
+    # data:image/jpeg;base64,<base64>
+    if not data_url.startswith("data:") or "," not in data_url:
+        raise ImageGenerationError(
+            "Некорректный формат reference image (ожидается data URL)."
+        )
+
+    header, b64_data = data_url.split(",", 1)
+    if ";base64" not in header:
+        raise ImageGenerationError("Reference image должен быть в base64 data URL формате.")
+
+    mime_type = header[5:].split(";", 1)[0] or "image/jpeg"
+    return mime_type, b64_data
+
+
+def _resolve_image_backend() -> tuple[str, str, int]:
+    if se.image_backend.provider != "google":
+        raise ImageGenerationError("Поддерживается только IMAGE_BACKEND_PROVIDER=google.")
+
+    if not se.image_backend.api_key:
+        raise ImageGenerationError(
+            "Не настроен ключ API для генерации изображений (IMAGE_BACKEND_API_KEY)."
+        )
+
+    return (
+        se.image_backend.api_key,
+        se.image_backend.base_url.rstrip("/"),
+        se.image_backend.timeout,
+    )
+
+
+def _resolve_image_proxy() -> str | None:
+    proxy = se.image_backend.proxy_url.strip()
+    return proxy or None
 
 
 async def generate_image(
@@ -77,82 +67,100 @@ async def generate_image(
     aspect_ratio: str = "1:1",
     output_format: str = "jpeg",
 ) -> bytes:
-    """Generate image using VseGPT-compatible images API."""
+    """Generate or edit image via Google Generative Language API."""
     del photo_ids
+    del aspect_ratio
+    del output_format
 
     api_key, base_url, timeout = _resolve_image_backend()
     proxy = _resolve_image_proxy()
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
 
     model_id = model or (
         se.image_backend.edit_model if reference_images else se.image_backend.model
     )
 
-    normalized_aspect_ratio = _normalize_aspect_ratio(aspect_ratio)
-
-    payload: dict[str, str] = {
-        "model": model_id,
-        "prompt": prompt,
-        "response_format": "b64_json",
-        "aspect_ratio": normalized_aspect_ratio,
-        "output_format": output_format,
-    }
-
-    if reference_images:
-        for idx, image_data_url in enumerate(reference_images[:10], start=1):
-            key = "image_url" if idx == 1 else f"image{idx}_url"
-            payload[key] = image_data_url
-
     logger.info(
-        "Image generation request: model=%s refs=%s proxy=%s",
+        "Image generation request: provider=google model=%s refs=%s proxy=%s",
         model_id,
         len(reference_images or []),
         bool(proxy),
     )
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{base_url}/images/generations",
-                headers=headers,
-                json=payload,
-                proxy=proxy,
-                timeout=aiohttp.ClientTimeout(total=timeout),
-            ) as response:
-                if response.status >= 400:
-                    error_text = _extract_error_message(await response.text())
-                    logger.error(
-                        "Image API request failed: status=%s model=%s body=%s",
-                        response.status,
-                        payload["model"],
-                        error_text,
-                    )
+    user_parts: list[dict[str, object]] = [{"text": prompt}]
+
+    for image_data_url in reference_images or []:
+        mime_type, b64_data = _parse_data_url(image_data_url)
+        user_parts.append(
+            {
+                "inline_data": {
+                    "mime_type": mime_type,
+                    "data": b64_data,
+                }
+            }
+        )
+
+    payload: dict[str, object] = {
+        "contents": [{"role": "user", "parts": user_parts}],
+        "generationConfig": {
+            "responseModalities": ["TEXT", "IMAGE"],
+        },
+    }
+
+    url = f"{base_url}/models/{model_id}:generateContent"
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            url,
+            params={"key": api_key},
+            json=payload,
+            proxy=proxy,
+            timeout=aiohttp.ClientTimeout(total=timeout),
+        ) as response:
+            if response.status >= 400:
+                error_text = _extract_error_message(await response.text())
+                logger.error(
+                    "Google image API request failed: status=%s model=%s body=%s",
+                    response.status,
+                    model_id,
+                    error_text,
+                )
+                raise ImageGenerationError(
+                    "Ошибка Google API генерации изображений "
+                    f"({response.status}): {error_text}"
+                )
+
+            data = await response.json(content_type=None)
+
+    candidates = data.get("candidates") if isinstance(data, dict) else None
+    if not isinstance(candidates, list):
+        raise ImageGenerationError(f"Некорректный ответ Google API: {data}")
+
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        content = candidate.get("content")
+        if not isinstance(content, dict):
+            continue
+        parts = content.get("parts")
+        if not isinstance(parts, list):
+            continue
+
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            inline = part.get("inlineData") or part.get("inline_data")
+            if not isinstance(inline, dict):
+                continue
+            raw_b64 = inline.get("data")
+            if isinstance(raw_b64, str) and raw_b64:
+                try:
+                    return base64.b64decode(raw_b64)
+                except (ValueError, B64DecodeError) as exc:
                     raise ImageGenerationError(
-                        "Ошибка API генерации изображений "
-                        f"({response.status}): {error_text}"
-                    )
+                        "Google API вернуло некорректные данные изображения."
+                    ) from exc
 
-                data = await response.json(content_type=None)
-                items = data.get("data") if isinstance(data, dict) else None
-                if isinstance(items, list) and items:
-                    first = items[0] if isinstance(items[0], dict) else {}
-                    b64_image = first.get("b64_json", "")
-                    if isinstance(b64_image, str) and b64_image:
-                        try:
-                            return base64.b64decode(b64_image)
-                        except (ValueError, B64DecodeError) as exc:
-                            raise ImageGenerationError(
-                                "API вернуло некорректные данные изображения."
-                            ) from exc
-
-                raise ImageGenerationError(f"Нет изображения в ответе API: {data}")
-    except aiohttp.ClientError as exc:
-        raise ImageGenerationError(
-            f"Сетевая ошибка при запросе к API генерации: {exc}"
-        ) from exc
+    raise ImageGenerationError(f"Нет изображения в ответе Google API: {data}")
 
 
 async def enqueue_fake_image_task(
@@ -163,7 +171,7 @@ async def enqueue_fake_image_task(
     aspect_ratio: str = "1:1",
     output_format: str = "jpeg",
 ) -> str:
-    """Generate image using VseGPT API (legacy function)."""
+    """Generate image and return fake task id (legacy helper)."""
     task_id = uuid.uuid4().hex[:10]
 
     try:
