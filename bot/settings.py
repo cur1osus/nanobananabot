@@ -44,11 +44,11 @@ class ImageBackendSettings:
         )
         self.model = os.environ.get(
             "IMAGE_BACKEND_MODEL",
-            "gemini-2.5-flash-image",
+            "gemini-3.1-flash-image-preview",
         )
         self.edit_model = os.environ.get(
             "IMAGE_BACKEND_EDIT_MODEL",
-            "gemini-3.1-flash-image-preview",
+            "gemini-3-pro-image-preview",
         )
         self.timeout = int(os.environ.get("IMAGE_BACKEND_TIMEOUT", 60))
         self.proxy_url = os.environ.get("IMAGE_BACKEND_PROXY_URL", "")

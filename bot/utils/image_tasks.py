@@ -32,7 +32,9 @@ def _parse_data_url(data_url: str) -> tuple[str, str]:
 
     header, b64_data = data_url.split(",", 1)
     if ";base64" not in header:
-        raise ImageGenerationError("Reference image должен быть в base64 data URL формате.")
+        raise ImageGenerationError(
+            "Reference image должен быть в base64 data URL формате."
+        )
 
     mime_type = header[5:].split(";", 1)[0] or "image/jpeg"
     return mime_type, b64_data
@@ -40,7 +42,9 @@ def _parse_data_url(data_url: str) -> tuple[str, str]:
 
 def _resolve_image_backend() -> tuple[str, str, int]:
     if se.image_backend.provider != "google":
-        raise ImageGenerationError("Поддерживается только IMAGE_BACKEND_PROVIDER=google.")
+        raise ImageGenerationError(
+            "Поддерживается только IMAGE_BACKEND_PROVIDER=google."
+        )
 
     if not se.image_backend.api_key:
         raise ImageGenerationError(
@@ -57,6 +61,99 @@ def _resolve_image_backend() -> tuple[str, str, int]:
 def _resolve_image_proxy() -> str | None:
     proxy = se.image_backend.proxy_url.strip()
     return proxy or None
+
+
+def _is_imagen_model(model_id: str) -> bool:
+    return model_id.startswith("imagen-")
+
+
+async def _request_google_json(
+    *,
+    session: aiohttp.ClientSession,
+    url: str,
+    api_key: str,
+    payload: dict[str, object],
+    proxy: str | None,
+    timeout: int,
+    model_id: str,
+) -> dict[str, object]:
+    async with session.post(
+        url,
+        params={"key": api_key},
+        json=payload,
+        proxy=proxy,
+        timeout=aiohttp.ClientTimeout(total=timeout),
+    ) as response:
+        if response.status >= 400:
+            error_text = _extract_error_message(await response.text())
+            logger.error(
+                "Google image API request failed: status=%s model=%s body=%s",
+                response.status,
+                model_id,
+                error_text,
+            )
+            raise ImageGenerationError(
+                "Ошибка Google API генерации изображений "
+                f"({response.status}): {error_text}"
+            )
+
+        data = await response.json(content_type=None)
+
+    if not isinstance(data, dict):
+        raise ImageGenerationError(f"Некорректный ответ Google API: {data}")
+    return data
+
+
+def _decode_base64_image(raw_b64: str, *, provider_name: str) -> bytes:
+    try:
+        return base64.b64decode(raw_b64)
+    except (ValueError, B64DecodeError) as exc:
+        raise ImageGenerationError(
+            f"{provider_name} вернуло некорректные данные изображения."
+        ) from exc
+
+
+def _extract_gemini_image(data: dict[str, object]) -> bytes:
+    candidates = data.get("candidates")
+    if not isinstance(candidates, list):
+        raise ImageGenerationError(f"Некорректный ответ Google API: {data}")
+
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        content = candidate.get("content")
+        if not isinstance(content, dict):
+            continue
+        parts = content.get("parts")
+        if not isinstance(parts, list):
+            continue
+
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            inline = part.get("inlineData") or part.get("inline_data")
+            if not isinstance(inline, dict):
+                continue
+            raw_b64 = inline.get("data")
+            if isinstance(raw_b64, str) and raw_b64:
+                return _decode_base64_image(raw_b64, provider_name="Google API")
+
+    raise ImageGenerationError(f"Нет изображения в ответе Google API: {data}")
+
+
+def _extract_imagen_image(data: dict[str, object]) -> bytes:
+    predictions = data.get("predictions")
+    if not isinstance(predictions, list):
+        raise ImageGenerationError(f"Некорректный ответ Imagen API: {data}")
+
+    for prediction in predictions:
+        if not isinstance(prediction, dict):
+            continue
+        raw_b64 = prediction.get("bytesBase64Encoded")
+        if isinstance(raw_b64, str) and raw_b64:
+            return _decode_base64_image(raw_b64, provider_name="Imagen API")
+
+    raise ImageGenerationError(f"Нет изображения в ответе Imagen API: {data}")
 
 
 async def generate_image(
@@ -86,6 +183,30 @@ async def generate_image(
         bool(proxy),
     )
 
+    if _is_imagen_model(model_id):
+        if reference_images:
+            raise ImageGenerationError(
+                "Эта модель поддерживает только генерацию по тексту без reference image."
+            )
+
+        payload: dict[str, object] = {
+            "instances": [{"prompt": prompt}],
+        }
+        url = f"{base_url}/models/{model_id}:predict"
+
+        async with aiohttp.ClientSession() as session:
+            data = await _request_google_json(
+                session=session,
+                url=url,
+                api_key=api_key,
+                payload=payload,
+                proxy=proxy,
+                timeout=timeout,
+                model_id=model_id,
+            )
+
+        return _extract_imagen_image(data)
+
     user_parts: list[dict[str, object]] = [{"text": prompt}]
 
     for image_data_url in reference_images or []:
@@ -109,58 +230,17 @@ async def generate_image(
     url = f"{base_url}/models/{model_id}:generateContent"
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(
-            url,
-            params={"key": api_key},
-            json=payload,
+        data = await _request_google_json(
+            session=session,
+            url=url,
+            api_key=api_key,
+            payload=payload,
             proxy=proxy,
-            timeout=aiohttp.ClientTimeout(total=timeout),
-        ) as response:
-            if response.status >= 400:
-                error_text = _extract_error_message(await response.text())
-                logger.error(
-                    "Google image API request failed: status=%s model=%s body=%s",
-                    response.status,
-                    model_id,
-                    error_text,
-                )
-                raise ImageGenerationError(
-                    "Ошибка Google API генерации изображений "
-                    f"({response.status}): {error_text}"
-                )
+            timeout=timeout,
+            model_id=model_id,
+        )
 
-            data = await response.json(content_type=None)
-
-    candidates = data.get("candidates") if isinstance(data, dict) else None
-    if not isinstance(candidates, list):
-        raise ImageGenerationError(f"Некорректный ответ Google API: {data}")
-
-    for candidate in candidates:
-        if not isinstance(candidate, dict):
-            continue
-        content = candidate.get("content")
-        if not isinstance(content, dict):
-            continue
-        parts = content.get("parts")
-        if not isinstance(parts, list):
-            continue
-
-        for part in parts:
-            if not isinstance(part, dict):
-                continue
-            inline = part.get("inlineData") or part.get("inline_data")
-            if not isinstance(inline, dict):
-                continue
-            raw_b64 = inline.get("data")
-            if isinstance(raw_b64, str) and raw_b64:
-                try:
-                    return base64.b64decode(raw_b64)
-                except (ValueError, B64DecodeError) as exc:
-                    raise ImageGenerationError(
-                        "Google API вернуло некорректные данные изображения."
-                    ) from exc
-
-    raise ImageGenerationError(f"Нет изображения в ответе Google API: {data}")
+    return _extract_gemini_image(data)
 
 
 async def enqueue_fake_image_task(
