@@ -168,7 +168,19 @@ def _format_period(start: datetime, end: datetime) -> str:
     return f"{start:%d.%m.%Y %H:%M} — {end:%d.%m.%Y %H:%M}"
 
 
+def _supports_balance_endpoint(*, provider: str, base_url: str) -> bool:
+    if provider == "google":
+        return False
+    return "generativelanguage.googleapis.com" not in base_url
+
+
 async def _fetch_all_gpt_balances() -> str:
+    if not _supports_balance_endpoint(
+        provider=se.image_backend.provider,
+        base_url=se.image_backend.base_url,
+    ):
+        return "• API: н/д (provider не поддерживает endpoint /balance)"
+
     result = await _fetch_balance_by_endpoint(
         label="API",
         api_key=se.image_backend.api_key,

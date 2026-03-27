@@ -50,8 +50,17 @@ class ImageBackendSettings:
             "IMAGE_BACKEND_EDIT_MODEL",
             "gemini-3-pro-image-preview",
         )
-        self.timeout = int(os.environ.get("IMAGE_BACKEND_TIMEOUT", 60))
+        self.timeout = int(os.environ.get("IMAGE_BACKEND_TIMEOUT", 120))
+        self.retries = max(0, int(os.environ.get("IMAGE_BACKEND_RETRIES", 1)))
+        self.retry_backoff = max(
+            0.0,
+            float(os.environ.get("IMAGE_BACKEND_RETRY_BACKOFF", 2)),
+        )
         self.proxy_url = os.environ.get("IMAGE_BACKEND_PROXY_URL", "")
+        self.fallback_model = (
+            os.environ.get("IMAGE_BACKEND_FALLBACK_MODEL", "").strip()
+            or self.model
+        )
 
 
 class AgentPlatformSettings:
