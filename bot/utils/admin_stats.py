@@ -12,14 +12,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.db.enum import TransactionStatus, TransactionType
 from bot.db.models import TransactionModel, UserModel
 from bot.db.redis.user_model import UserRD
-from bot.utils.formatting import format_rub
-from bot.utils.payments import CARD_CURRENCY, STARS_CURRENCY
 from bot.settings import se
+from bot.utils.formatting import format_rub
+from bot.utils.http_client import create_client_session, resolve_proxy_settings
+from bot.utils.payments import CARD_CURRENCY, STARS_CURRENCY
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
 
 ONLINE_MINUTES: Final[int] = 15
+_ALL_TIME_START: Final[datetime] = datetime(2020, 1, 1)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,13 @@ class PeriodBounds:
 
 
 def get_period_bounds(period: str, now: datetime) -> PeriodBounds:
+    if period == "all":
+        return PeriodBounds(
+            start=_ALL_TIME_START,
+            end=now,
+            prev_start=_ALL_TIME_START,
+            prev_end=_ALL_TIME_START,
+        )
     if period == "week":
         delta = timedelta(days=7)
     elif period == "month":
@@ -54,7 +63,7 @@ async def build_admin_info_text(
         else datetime.now(tz=UTC).replace(tzinfo=None)
     )
     bounds = get_period_bounds(period, now)
-    period_label = _format_period(bounds.start, bounds.end)
+    period_label = "Всё время" if period == "all" else _format_period(bounds.start, bounds.end)
 
     total_users = await session.scalar(select(func.count(UserModel.id))) or 0
     new_users = await _count_users(session, bounds.start, bounds.end)
@@ -62,7 +71,6 @@ async def build_admin_info_text(
     online_users = await UserRD.count_online(redis, threshold_minutes=ONLINE_MINUTES)
 
     sales_current = await _sum_sales(session, bounds.start, bounds.end)
-    sales_prev = await _sum_sales(session, bounds.prev_start, bounds.prev_end)
     withdrawals_current = await _sum_transactions(
         session,
         TransactionType.WITHDRAW_REQUEST.value,
@@ -70,6 +78,20 @@ async def build_admin_info_text(
         bounds.start,
         bounds.end,
     )
+
+    if period == "all":
+        card_sales = sales_current.get(CARD_CURRENCY, 0)
+        stars_sales = sales_current.get(STARS_CURRENCY, 0)
+        return (
+            f"📊 Инфо — период: {period_label}\n\n"
+            f"Продажи (карта): {format_rub(card_sales)} р.\n"
+            f"Продажи (звезды): {stars_sales}\n"
+            f"Выводы реферерам: {format_rub(withdrawals_current)} р.\n\n"
+            f"Всего пользователей: {total_users}\n"
+            f"Онлайн ({ONLINE_MINUTES} мин): {online_users}"
+        )
+
+    sales_prev = await _sum_sales(session, bounds.prev_start, bounds.prev_end)
     withdrawals_prev = await _sum_transactions(
         session,
         TransactionType.WITHDRAW_REQUEST.value,
@@ -78,14 +100,11 @@ async def build_admin_info_text(
         bounds.prev_end,
     )
 
-    gpt_balances = await _fetch_all_gpt_balances()
-
     return (
         f"📊 Инфо — период: \n{period_label}\n\n"
         f"Продажи (карта): {_format_sales_by_currency(sales_current, sales_prev, CARD_CURRENCY)}\n"
         f"Продажи (звезды): {_format_sales_by_currency(sales_current, sales_prev, STARS_CURRENCY)}\n"
         f"Выводы реферерам: {format_rub(withdrawals_current)} р. ({_format_delta_rub(withdrawals_current - withdrawals_prev)})\n\n"
-        f"Баланс GPT:\n{gpt_balances}\n\n"
         f"Всего пользователей: {total_users} (+{new_users})\n"
         f"Онлайн ({ONLINE_MINUTES} мин): {online_users}"
     )
@@ -201,7 +220,11 @@ async def _fetch_balance_by_endpoint(*, label: str, api_key: str, base_url: str)
 
     try:
         timeout = aiohttp.ClientTimeout(total=4)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        proxy_settings = resolve_proxy_settings(se.image_backend.proxy_url)
+        async with create_client_session(
+            timeout=timeout,
+            proxy_settings=proxy_settings,
+        ) as session:
             async with session.get(url, headers=headers) as response:
                 if response.status != 200:
                     text = await response.text()

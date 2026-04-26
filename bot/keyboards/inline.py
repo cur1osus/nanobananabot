@@ -93,12 +93,8 @@ async def ik_image_result_actions() -> InlineKeyboardMarkup:
 async def ik_prompt_nav() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="🔙 К фото",
+        text="↩️ Назад",
         callback_data=ImageNav(action="to_photos").pack(),
-    )
-    builder.button(
-        text="🏠 В главное меню",
-        callback_data=MenuAction(action="home").pack(),
     )
     builder.adjust(1)
     return builder.as_markup()
@@ -206,18 +202,18 @@ async def ik_how_menu() -> InlineKeyboardMarkup:
 async def ik_topup_methods() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="⭐️ Звезды",
-        callback_data=TopupMethod(method="stars").pack(),
-    )
-    builder.button(
-        text="💳 Банковская карта",
+        text="💳 Карта / СБП",
         callback_data=TopupMethod(method="card").pack(),
     )
     builder.button(
-        text=BACK_BUTTON_TEXT,
+        text="⭐️ Звёзды",
+        callback_data=TopupMethod(method="stars").pack(),
+    )
+    builder.button(
+        text="↩️ Назад",
         callback_data=MenuAction(action="home").pack(),
     )
-    builder.adjust(1)
+    builder.adjust(2, 1)
     return builder.as_markup()
 
 
@@ -225,14 +221,17 @@ async def ik_topup_plans(method: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     method_info = get_topup_method(method)
     tariffs = get_topup_tariffs(method)
-    currency_label = method_info.currency_label if method_info else "руб."
     for tariff in tariffs:
+        if method_info and method_info.key == "stars":
+            text = f"{tariff.price} ⭐️ → {tariff.credits} генераций"
+        else:
+            text = f"{tariff.price} ₽ → {tariff.credits} генераций"
         builder.button(
-            text=(f"{tariff.credits} кредитов - {tariff.price} {currency_label}"),
+            text=text,
             callback_data=TopupPlan(method=method, plan=tariff.plan).pack(),
         )
     builder.button(
-        text=BACK_BUTTON_TEXT,
+        text="↩️ Назад",
         callback_data=MenuAction(action="topup").pack(),
     )
     builder.adjust(1)
@@ -309,7 +308,7 @@ async def ik_withdraw_cancel(transaction_id: int) -> InlineKeyboardMarkup:
 
 async def ik_info_periods(selected: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    periods = [("day", "День"), ("week", "Неделя"), ("month", "Месяц")]
+    periods = [("day", "День"), ("week", "Неделя"), ("month", "Месяц"), ("all", "Всё время")]
     for key, label in periods:
         prefix = "✅ " if key == selected else ""
         builder.button(
@@ -320,7 +319,7 @@ async def ik_info_periods(selected: str) -> InlineKeyboardMarkup:
         text=BACK_BUTTON_TEXT,
         callback_data=MenuAction(action="home").pack(),
     )
-    builder.adjust(3, 1)
+    builder.adjust(3, 1, 1)
     return builder.as_markup()
 
 
