@@ -319,9 +319,9 @@ async def fetch_runware_account_text() -> str:
             d = d.get(k, default)  # type: ignore[assignment]
         return str(d) if d != default else default
 
-    org_name = _get(info, "organization", "name")
+    org_name = info.get("organizationName") or "—"
     balance_amount = _get(info, "balance", "amount")
-    balance_free = _get(info, "balance", "freeAmount")
+    balance_free = _get(info, "balance", "freeBalance")
     balance_currency = _get(info, "balance", "currency", default="$")
 
     today_credits = _get(info, "usage", "today", "credits")
