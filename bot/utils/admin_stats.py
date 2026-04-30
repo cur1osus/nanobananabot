@@ -15,7 +15,6 @@ from bot.db.models import TransactionModel, UserModel
 from bot.db.redis.user_model import UserRD
 from bot.settings import se
 from bot.utils.formatting import format_rub
-from bot.utils.http_client import create_client_session, resolve_proxy_settings
 from bot.utils.payments import CARD_CURRENCY, STARS_CURRENCY
 
 if TYPE_CHECKING:
@@ -221,11 +220,7 @@ async def _fetch_balance_by_endpoint(*, label: str, api_key: str, base_url: str)
 
     try:
         timeout = aiohttp.ClientTimeout(total=4)
-        proxy_settings = resolve_proxy_settings(se.image_backend.proxy_url)
-        async with create_client_session(
-            timeout=timeout,
-            proxy_settings=proxy_settings,
-        ) as session:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url, headers=headers) as response:
                 if response.status != 200:
                     text = await response.text()
@@ -280,8 +275,7 @@ async def fetch_runware_account_text() -> str:
 
     try:
         timeout = aiohttp.ClientTimeout(total=8)
-        proxy_settings = resolve_proxy_settings(se.image_backend.proxy_url)
-        async with create_client_session(timeout=timeout, proxy_settings=proxy_settings) as session:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(
                 url,
                 headers={

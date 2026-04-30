@@ -58,13 +58,12 @@ class ImageBackendSettings:
         )
         self.rate_limit_retries = max(
             0,
-            int(os.environ.get("IMAGE_BACKEND_RATE_LIMIT_RETRIES", 1)),
+            int(os.environ.get("IMAGE_BACKEND_RATE_LIMIT_RETRIES", 3)),
         )
         self.rate_limit_backoff = max(
             0.0,
-            float(os.environ.get("IMAGE_BACKEND_RATE_LIMIT_BACKOFF", 5)),
+            float(os.environ.get("IMAGE_BACKEND_RATE_LIMIT_BACKOFF", 1)),
         )
-        self.proxy_url = os.environ.get("IMAGE_BACKEND_PROXY_URL", "")
 
 
 class AgentPlatformSettings:
