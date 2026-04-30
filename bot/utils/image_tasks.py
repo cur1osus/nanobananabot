@@ -68,6 +68,14 @@ def _aspect_ratio_to_dims(aspect_ratio: str) -> tuple[int, int]:
     return ASPECT_RATIO_DIMS.get(aspect_ratio, ASPECT_RATIO_DIMS["1:1"])
 
 
+def closest_aspect_ratio(width: int, height: int) -> str:
+    if height == 0:
+        return "1:1"
+    target = width / height
+    candidates = {k: v for k, v in ASPECT_RATIO_DIMS.items() if k != "auto"}
+    return min(candidates, key=lambda k: abs(candidates[k][0] / candidates[k][1] - target))
+
+
 async def _download_image(url: str, *, timeout: int) -> bytes:
     request_timeout = aiohttp.ClientTimeout(total=timeout)
     async with aiohttp.ClientSession() as session:

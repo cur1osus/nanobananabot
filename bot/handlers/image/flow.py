@@ -39,6 +39,7 @@ from bot.utils.image_state import get_image_data, update_image_data
 from bot.utils.image_tasks import (
     ImageGenerationError,
     ImageGenerationTimeoutError,
+    closest_aspect_ratio,
     generate_image,
 )
 from bot.utils.admin_notify import notify_admins_error
@@ -563,7 +564,7 @@ async def collect_photos(
     photos.append(photo.file_id)
     aspect_ratio = data.aspect_ratio
     if len(photos) == 1:
-        aspect_ratio = "auto"
+        aspect_ratio = closest_aspect_ratio(photo.width, photo.height)
 
     prompt_requested = data.prompt_requested
     if not prompt_requested:
