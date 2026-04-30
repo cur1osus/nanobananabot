@@ -339,8 +339,8 @@ async def fetch_runware_account_text() -> str:
         f"💰 <b>Баланс</b>\n"
         f"Основной: {balance_amount} $\n\n"
         f"📈 <b>Использование</b>\n"
-        f"Сегодня: {today_credits} cr / {today_requests} запросов\n"
-        f"7 дней: {week_credits} cr / {week_requests} запросов\n"
-        f"30 дней: {month_credits} cr / {month_requests} запросов\n"
-        f"Всего: {total_credits} cr / {total_requests} запросов"
+        f"Сегодня: {today_credits} $ / {today_requests} запросов\n"
+        f"7 дней: {week_credits} $ / {week_requests} запросов\n"
+        f"30 дней: {month_credits} $ / {month_requests} запросов\n"
+        f"Всего: {total_credits} $ / {total_requests} запросов"
     )
