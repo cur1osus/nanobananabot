@@ -312,6 +312,7 @@ async def fetch_runware_account_text() -> str:
     if not isinstance(info, dict):
         return f"Некорректный ответ: {info}"
 
+
     def _get(d: object, *keys: str, default: str = "—") -> str:
         for k in keys:
             if not isinstance(d, dict):
@@ -320,9 +321,8 @@ async def fetch_runware_account_text() -> str:
         return str(d) if d != default else default
 
     org_name = info.get("organizationName") or "—"
-    balance_amount = _get(info, "balance", "amount")
-    balance_free = _get(info, "balance", "freeBalance")
-    balance_currency = _get(info, "balance", "currency", default="$")
+    balance_raw = info.get("balance")
+    balance_amount = str(balance_raw) if balance_raw is not None else "—"
 
     today_credits = _get(info, "usage", "today", "credits")
     today_requests = _get(info, "usage", "today", "requests")
@@ -337,8 +337,7 @@ async def fetch_runware_account_text() -> str:
         f"🏢 <b>Runware аккаунт</b>\n"
         f"Организация: {org_name}\n\n"
         f"💰 <b>Баланс</b>\n"
-        f"Основной: {balance_amount} {balance_currency}\n"
-        f"Бесплатный: {balance_free} {balance_currency}\n\n"
+        f"Основной: {balance_amount} $\n\n"
         f"📈 <b>Использование</b>\n"
         f"Сегодня: {today_credits} cr / {today_requests} запросов\n"
         f"7 дней: {week_credits} cr / {week_requests} запросов\n"
