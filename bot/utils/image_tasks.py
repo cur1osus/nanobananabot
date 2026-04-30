@@ -1,16 +1,49 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import uuid
-from binascii import Error as B64DecodeError
 
 import aiohttp
 
 from bot.settings import se
+from bot.utils.http_client import (
+    ProxySettings,
+    create_client_session,
+    resolve_proxy_settings,
+)
 
 logger = logging.getLogger(__name__)
+
+ASPECT_RATIO_DIMS: dict[str, tuple[int, int]] = {
+    "1:1": (1024, 1024),
+    "3:2": (1264, 848),
+    "2:3": (848, 1264),
+    "4:3": (1200, 896),
+    "3:4": (896, 1200),
+    "5:4": (1152, 928),
+    "4:5": (928, 1152),
+    "16:9": (1264, 848),
+    "9:16": (848, 1264),
+    "21:9": (1264, 848),
+    "auto": (1024, 1024),
+}
+
+_OUTPUT_FORMAT_MAP: dict[str, str] = {
+    "jpeg": "JPG",
+    "jpg": "JPG",
+    "png": "PNG",
+    "webp": "WEBP",
+}
+
+_runware_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_runware_semaphore() -> asyncio.Semaphore:
+    global _runware_semaphore
+    if _runware_semaphore is None:
+        _runware_semaphore = asyncio.Semaphore(3)
+    return _runware_semaphore
 
 
 class ImageGenerationError(RuntimeError):
@@ -23,105 +56,147 @@ class ImageGenerationTimeoutError(ImageGenerationError):
 
 def _extract_error_message(raw_text: str) -> str:
     text = raw_text.strip()
-    if not text:
-        return "empty response body"
-    return text[:500]
-
-
-def _parse_data_url(data_url: str) -> tuple[str, str]:
-    # data:image/jpeg;base64,<base64>
-    if not data_url.startswith("data:") or "," not in data_url:
-        raise ImageGenerationError(
-            "Некорректный формат reference image (ожидается data URL)."
-        )
-
-    header, b64_data = data_url.split(",", 1)
-    if ";base64" not in header:
-        raise ImageGenerationError(
-            "Reference image должен быть в base64 data URL формате."
-        )
-
-    mime_type = header[5:].split(";", 1)[0] or "image/jpeg"
-    return mime_type, b64_data
+    return text[:500] if text else "empty response body"
 
 
 def _resolve_image_backend() -> tuple[str, str, int]:
-    if se.image_backend.provider != "google":
+    if se.image_backend.provider != "runware":
         raise ImageGenerationError(
-            "Поддерживается только IMAGE_BACKEND_PROVIDER=google."
+            "Поддерживается только IMAGE_BACKEND_PROVIDER=runware."
         )
-
     if not se.image_backend.api_key:
         raise ImageGenerationError(
             "Не настроен ключ API для генерации изображений (IMAGE_BACKEND_API_KEY)."
         )
-
-    return (
-        se.image_backend.api_key,
-        se.image_backend.base_url.rstrip("/"),
-        se.image_backend.timeout,
-    )
+    base_url = se.image_backend.base_url.rstrip("/")
+    return se.image_backend.api_key, base_url, se.image_backend.timeout
 
 
-def _resolve_image_proxy() -> str | None:
-    proxy = se.image_backend.proxy_url.strip()
-    return proxy or None
+def _resolve_image_proxy_settings() -> ProxySettings:
+    return resolve_proxy_settings(se.image_backend.proxy_url)
 
 
-def _is_imagen_model(model_id: str) -> bool:
-    return model_id.startswith("imagen-")
+def _aspect_ratio_to_dims(aspect_ratio: str) -> tuple[int, int]:
+    return ASPECT_RATIO_DIMS.get(aspect_ratio, ASPECT_RATIO_DIMS["1:1"])
 
 
-async def _request_google_json(
+def _build_task(
+    *,
+    model_id: str,
+    prompt: str,
+    reference_images: list[str] | None,
+    width: int,
+    height: int,
+    output_format: str,
+) -> dict[str, object]:
+    task: dict[str, object] = {
+        "taskType": "imageInference",
+        "taskUUID": str(uuid.uuid4()),
+        "model": model_id,
+        "positivePrompt": prompt,
+        "width": width,
+        "height": height,
+        "outputType": "URL",
+        "outputFormat": output_format,
+    }
+    if reference_images:
+        task["inputs"] = {"referenceImages": reference_images}
+    return task
+
+
+async def _download_image(url: str, *, session: aiohttp.ClientSession, proxy: str | None, timeout: int) -> bytes:
+    request_timeout = aiohttp.ClientTimeout(total=timeout)
+    async with session.get(url, proxy=proxy, timeout=request_timeout) as response:
+        if response.status >= 400:
+            raise ImageGenerationError(f"Не удалось скачать изображение Runware ({response.status})")
+        return await response.read()
+
+
+async def _request_runware(
     *,
     session: aiohttp.ClientSession,
-    url: str,
     api_key: str,
-    payload: dict[str, object],
+    endpoint: str,
+    task: dict[str, object],
     proxy: str | None,
     timeout: int,
     model_id: str,
 ) -> dict[str, object]:
-    attempts = se.image_backend.retries + 1
     request_timeout = aiohttp.ClientTimeout(total=timeout)
+    attempts = se.image_backend.retries + 1
 
     for attempt in range(1, attempts + 1):
         try:
-            async with session.post(
-                url,
-                params={"key": api_key},
-                json=payload,
-                proxy=proxy,
-                timeout=request_timeout,
-            ) as response:
-                if response.status >= 400:
-                    error_text = _extract_error_message(await response.text())
-                    logger.error(
-                        "Google image API request failed: status=%s model=%s body=%s",
-                        response.status,
-                        model_id,
-                        error_text,
-                    )
-                    raise ImageGenerationError(
-                        "Ошибка Google API генерации изображений "
-                        f"({response.status}): {error_text}"
-                    )
+            rate_attempt = 0
+            while True:
+                async with session.post(
+                    endpoint,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json=[task],
+                    proxy=proxy,
+                    timeout=request_timeout,
+                ) as response:
+                    if response.status == 429:
+                        if rate_attempt >= se.image_backend.rate_limit_retries:
+                            error_text = _extract_error_message(await response.text())
+                            logger.error(
+                                "Runware API rate limit exhausted: model=%s body=%s",
+                                model_id,
+                                error_text,
+                            )
+                            raise ImageGenerationError(
+                                f"Ошибка Runware API (429): {error_text}"
+                            )
+                        rate_attempt += 1
+                        wait = se.image_backend.rate_limit_backoff * (2 ** (rate_attempt - 1))
+                        logger.warning(
+                            "Runware API rate limited (429): model=%s rate_attempt=%s/%s retry_in=%.1fs",
+                            model_id,
+                            rate_attempt,
+                            se.image_backend.rate_limit_retries,
+                            wait,
+                        )
+                        await asyncio.sleep(wait)
+                        continue
 
-                data = await response.json(content_type=None)
+                    if response.status >= 400:
+                        error_text = _extract_error_message(await response.text())
+                        logger.error(
+                            "Runware API request failed: status=%s model=%s body=%s",
+                            response.status,
+                            model_id,
+                            error_text,
+                        )
+                        raise ImageGenerationError(
+                            f"Ошибка Runware API ({response.status}): {error_text}"
+                        )
+
+                    data = await response.json(content_type=None)
+                    break
 
             if not isinstance(data, dict):
-                raise ImageGenerationError(f"Некорректный ответ Google API: {data}")
-            return data
+                raise ImageGenerationError(f"Некорректный ответ Runware API: {data}")
+
+            results = data.get("data")
+            if not isinstance(results, list) or not results:
+                raise ImageGenerationError(f"Пустой ответ Runware API: {data}")
+
+            result = results[0]
+            if not isinstance(result, dict):
+                raise ImageGenerationError(f"Некорректный результат Runware API: {result}")
+
+            return result
+
         except asyncio.TimeoutError as exc:
             if attempt >= attempts:
                 raise ImageGenerationTimeoutError(
-                    "Таймаут запроса к Google API генерации изображений "
+                    f"Таймаут запроса к Runware API "
                     f"(model={model_id}, timeout={timeout}s, attempts={attempts})."
                 ) from exc
 
             retry_in = se.image_backend.retry_backoff * attempt
             logger.warning(
-                "Google image API timeout: model=%s attempt=%s/%s retry_in=%.1fs",
+                "Runware API timeout: model=%s attempt=%s/%s retry_in=%.1fs",
                 model_id,
                 attempt,
                 attempts,
@@ -130,128 +205,7 @@ async def _request_google_json(
             if retry_in > 0:
                 await asyncio.sleep(retry_in)
 
-    raise ImageGenerationError("Не удалось выполнить запрос к Google API")
-
-
-def _decode_base64_image(raw_b64: str, *, provider_name: str) -> bytes:
-    try:
-        return base64.b64decode(raw_b64)
-    except (ValueError, B64DecodeError) as exc:
-        raise ImageGenerationError(
-            f"{provider_name} вернуло некорректные данные изображения."
-        ) from exc
-
-
-def _extract_gemini_image(data: dict[str, object]) -> bytes:
-    candidates = data.get("candidates")
-    if not isinstance(candidates, list):
-        raise ImageGenerationError(f"Некорректный ответ Google API: {data}")
-
-    for candidate in candidates:
-        if not isinstance(candidate, dict):
-            continue
-        content = candidate.get("content")
-        if not isinstance(content, dict):
-            continue
-        parts = content.get("parts")
-        if not isinstance(parts, list):
-            continue
-
-        for part in parts:
-            if not isinstance(part, dict):
-                continue
-            inline = part.get("inlineData") or part.get("inline_data")
-            if not isinstance(inline, dict):
-                continue
-            raw_b64 = inline.get("data")
-            if isinstance(raw_b64, str) and raw_b64:
-                return _decode_base64_image(raw_b64, provider_name="Google API")
-
-    raise ImageGenerationError(f"Нет изображения в ответе Google API: {data}")
-
-
-def _extract_imagen_image(data: dict[str, object]) -> bytes:
-    predictions = data.get("predictions")
-    if not isinstance(predictions, list):
-        raise ImageGenerationError(f"Некорректный ответ Imagen API: {data}")
-
-    for prediction in predictions:
-        if not isinstance(prediction, dict):
-            continue
-        raw_b64 = prediction.get("bytesBase64Encoded")
-        if isinstance(raw_b64, str) and raw_b64:
-            return _decode_base64_image(raw_b64, provider_name="Imagen API")
-
-    raise ImageGenerationError(f"Нет изображения в ответе Imagen API: {data}")
-
-
-async def _generate_image_with_model(
-    *,
-    model_id: str,
-    prompt: str,
-    reference_images: list[str] | None,
-    api_key: str,
-    base_url: str,
-    proxy: str | None,
-    timeout: int,
-) -> bytes:
-    if _is_imagen_model(model_id):
-        if reference_images:
-            raise ImageGenerationError(
-                "Эта модель поддерживает только генерацию по тексту без reference image."
-            )
-
-        payload: dict[str, object] = {
-            "instances": [{"prompt": prompt}],
-        }
-        url = f"{base_url}/models/{model_id}:predict"
-
-        async with aiohttp.ClientSession() as session:
-            data = await _request_google_json(
-                session=session,
-                url=url,
-                api_key=api_key,
-                payload=payload,
-                proxy=proxy,
-                timeout=timeout,
-                model_id=model_id,
-            )
-
-        return _extract_imagen_image(data)
-
-    user_parts: list[dict[str, object]] = [{"text": prompt}]
-
-    for image_data_url in reference_images or []:
-        mime_type, b64_data = _parse_data_url(image_data_url)
-        user_parts.append(
-            {
-                "inline_data": {
-                    "mime_type": mime_type,
-                    "data": b64_data,
-                }
-            }
-        )
-
-    payload = {
-        "contents": [{"role": "user", "parts": user_parts}],
-        "generationConfig": {
-            "responseModalities": ["TEXT", "IMAGE"],
-        },
-    }
-    url = f"{base_url}/models/{model_id}:generateContent"
-
-    async with aiohttp.ClientSession() as session:
-        data = await _request_google_json(
-            session=session,
-            url=url,
-            api_key=api_key,
-            payload=payload,
-            proxy=proxy,
-            timeout=timeout,
-            model_id=model_id,
-        )
-
-    return _extract_gemini_image(data)
+    raise ImageGenerationError("Не удалось выполнить запрос к Runware API")
 
 
 async def generate_image(
@@ -262,88 +216,66 @@ async def generate_image(
     aspect_ratio: str = "1:1",
     output_format: str = "jpeg",
 ) -> bytes:
-    """Generate or edit image via Google Generative Language API."""
+    """Generate image via Runware API."""
     del photo_ids
-    del aspect_ratio
-    del output_format
 
     api_key, base_url, timeout = _resolve_image_backend()
-    proxy = _resolve_image_proxy()
+    proxy_settings = _resolve_image_proxy_settings()
 
-    model_id = model or (
-        se.image_backend.edit_model if reference_images else se.image_backend.model
-    )
+    model_id = model or se.image_backend.model
+    width, height = _aspect_ratio_to_dims(aspect_ratio)
+    fmt = _OUTPUT_FORMAT_MAP.get(output_format.lower(), "JPG")
 
     logger.info(
-        "Image generation request: provider=google model=%s refs=%s proxy=%s",
+        "Image generation request: provider=runware model=%s refs=%s dims=%dx%d proxy=%s",
         model_id,
         len(reference_images or []),
-        bool(proxy),
+        width,
+        height,
+        proxy_settings.source,
     )
 
-    try:
-        return await _generate_image_with_model(
-            model_id=model_id,
-            prompt=prompt,
-            reference_images=reference_images,
-            api_key=api_key,
-            base_url=base_url,
-            proxy=proxy,
-            timeout=timeout,
-        )
-    except ImageGenerationTimeoutError:
-        fallback_model = se.image_backend.fallback_model.strip()
-        can_fallback = (
-            model_id == se.image_backend.edit_model
-            and fallback_model
-            and fallback_model != model_id
-            and not (reference_images and _is_imagen_model(fallback_model))
-        )
-        if not can_fallback:
-            raise
+    task = _build_task(
+        model_id=model_id,
+        prompt=prompt,
+        reference_images=reference_images,
+        width=width,
+        height=height,
+        output_format=fmt,
+    )
+    endpoint = f"{base_url}/inference"
 
-        logger.warning(
-            "Image generation timed out for model=%s, fallback to model=%s",
-            model_id,
-            fallback_model,
-        )
-        return await _generate_image_with_model(
-            model_id=fallback_model,
-            prompt=prompt,
-            reference_images=reference_images,
-            api_key=api_key,
-            base_url=base_url,
-            proxy=proxy,
-            timeout=timeout,
-        )
-
-
-async def enqueue_fake_image_task(
-    *,
-    model_key: str,
-    prompt: str,
-    photo_ids: list[str],
-    aspect_ratio: str = "1:1",
-    output_format: str = "jpeg",
-) -> str:
-    """Generate image and return fake task id (legacy helper)."""
-    task_id = uuid.uuid4().hex[:10]
-
-    try:
-        image_bytes = await generate_image(
-            prompt=prompt,
-            photo_ids=photo_ids,
-            aspect_ratio=aspect_ratio,
-            output_format=output_format,
-        )
-        logger.info(
-            "Image generated successfully: task_id=%s model=%s bytes=%s",
-            task_id,
-            model_key,
-            len(image_bytes),
-        )
-    except Exception as e:
-        logger.error("Image generation error: %s", e, exc_info=True)
-        raise
-
-    return task_id
+    async with _get_runware_semaphore():
+        try:
+            async with asyncio.timeout(se.image_backend.total_timeout):
+                async with create_client_session(proxy_settings=proxy_settings) as session:
+                    result = await _request_runware(
+                        session=session,
+                        api_key=api_key,
+                        endpoint=endpoint,
+                        task=task,
+                        proxy=proxy_settings.explicit_proxy,
+                        timeout=timeout,
+                        model_id=model_id,
+                    )
+                    image_url = result.get("imageURL")
+                    if not isinstance(image_url, str) or not image_url:
+                        raise ImageGenerationError(
+                            f"Runware API не вернул imageURL (model={model_id}): {result}"
+                        )
+                    return await _download_image(
+                        image_url,
+                        session=session,
+                        proxy=proxy_settings.explicit_proxy,
+                        timeout=timeout,
+                    )
+        except TimeoutError as exc:
+            logger.warning(
+                "Image generation exceeded total timeout: model=%s total_timeout=%ss",
+                model_id,
+                se.image_backend.total_timeout,
+            )
+            raise ImageGenerationTimeoutError(
+                f"Превышено общее время ожидания генерации изображения "
+                f"(model={model_id}, total_timeout={se.image_backend.total_timeout}s)."
+            ) from exc

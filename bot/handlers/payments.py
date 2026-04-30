@@ -169,7 +169,7 @@ async def _apply_referral_bonus(
         if payment.currency == STARS_CURRENCY
         else payment.total_amount
     )
-    bonus = (base_amount * 30) // 100
+    bonus = (base_amount * 20) // 100
     if bonus <= 0:
         return
 

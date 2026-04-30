@@ -29,14 +29,19 @@ from bot.keyboards.inline import (
     ik_image_waiting_photos,
     ik_prompt_nav,
 )
-from bot.states import ImageGenerationState
+from bot.states import BaseUserState, ImageGenerationState
 from bot.utils.image_models import (
     DEFAULT_IMAGE_MODEL_KEY,
     get_image_model,
     is_image_model_key,
 )
 from bot.utils.image_state import get_image_data, update_image_data
-from bot.utils.image_tasks import ImageGenerationError, generate_image
+from bot.utils.image_tasks import (
+    ImageGenerationError,
+    ImageGenerationTimeoutError,
+    generate_image,
+)
+from bot.utils.admin_notify import notify_admins_error
 from bot.utils.messaging import edit_or_answer
 from bot.utils.speech_recognition import (
     SpeechRecognitionError,
@@ -117,10 +122,30 @@ async def _build_reference_images(message: Message, photo_ids: list[str]) -> lis
 
 def _generation_error_text(error: Exception) -> str:
     logger.warning("Public image generation error hidden from user: %s", error)
-    return (
-        "❌ Ошибка при генерации изображения. Попробуйте позже.\n\n"
-        "Если ошибка повторяется, обратитесь в поддержку."
-    )
+
+    raw_error = str(error).lower()
+    if isinstance(error, ImageGenerationTimeoutError):
+        return (
+            "❌ Сейчас генерация заняла слишком много времени.\n\n"
+            "Попробуйте ещё раз через пару минут."
+        )
+
+    if "prohibited_content" in raw_error or "violated" in raw_error:
+        return (
+            "❌ Не удалось выполнить генерацию по этому запросу.\n\n"
+            "Попробуйте переформулировать описание более нейтрально и без спорных формулировок."
+        )
+
+    if (
+        "заблокировал генерацию изображения" in raw_error
+        or "не вернул изображение" in raw_error
+    ):
+        return (
+            "❌ Не удалось получить изображение по этому запросу.\n\n"
+            "Попробуйте переформулировать запрос, упростить описание или заменить референс."
+        )
+
+    return "❌ Не удалось сгенерировать изображение.\n\nПопробуйте ещё раз чуть позже."
 
 
 async def _send_generation_result(
@@ -214,9 +239,33 @@ async def _run_image_generation(
     except ImageGenerationError as e:
         logger.exception("Image generation API error")
         await status_msg.edit_text(_generation_error_text(e))
+        if message.bot:
+            await notify_admins_error(
+                message.bot,
+                "Ошибка генерации изображения (редактирование)",
+                e,
+                context={
+                    "user_id": user.user_id,
+                    "model": model.api_model,
+                    "refs": len(data.photos),
+                    "prompt": normalized_prompt[:200],
+                },
+            )
     except Exception as e:
         logger.exception("Unexpected image generation error")
         await status_msg.edit_text(_generation_error_text(e))
+        if message.bot:
+            await notify_admins_error(
+                message.bot,
+                "Неожиданная ошибка генерации изображения (редактирование)",
+                e,
+                context={
+                    "user_id": user.user_id,
+                    "model": model.api_model,
+                    "refs": len(data.photos),
+                    "prompt": normalized_prompt[:200],
+                },
+            )
 
 
 async def _run_create_generation(
@@ -279,9 +328,31 @@ async def _run_create_generation(
     except ImageGenerationError as e:
         logger.exception("Create image API error")
         await status_msg.edit_text(_generation_error_text(e))
+        if message.bot:
+            await notify_admins_error(
+                message.bot,
+                "Ошибка генерации изображения (создание)",
+                e,
+                context={
+                    "user_id": user.user_id,
+                    "model": model.create_api_model,
+                    "prompt": normalized_prompt[:200],
+                },
+            )
     except Exception as e:
         logger.exception("Unexpected create image error")
         await status_msg.edit_text(_generation_error_text(e))
+        if message.bot:
+            await notify_admins_error(
+                message.bot,
+                "Неожиданная ошибка генерации изображения (создание)",
+                e,
+                context={
+                    "user_id": user.user_id,
+                    "model": model.create_api_model,
+                    "prompt": normalized_prompt[:200],
+                },
+            )
 
 
 @router.callback_query(ModelMenu.filter())
@@ -623,6 +694,40 @@ async def remind_create_prompt_photo(message: Message) -> None:
     await message.answer(
         "В режиме создания фото не нужны. Пришлите только текстовый промпт.",
         reply_markup=await ik_create_prompt_nav(),
+    )
+
+
+@router.message(F.photo)
+async def quick_start_from_photo(
+    message: Message,
+    state: FSMContext,
+) -> None:
+    current_state = await state.get_state()
+    if current_state not in (None, BaseUserState.main.state):
+        return
+
+    if not message.photo:
+        return
+
+    data = await get_image_data(state)
+    model_key = (
+        data.model_key
+        if is_image_model_key(data.model_key)
+        else DEFAULT_IMAGE_MODEL_KEY
+    )
+
+    await update_image_data(
+        state,
+        model_key=model_key,
+        photos=[message.photo[-1].file_id],
+        prompt="",
+        prompt_requested=True,
+        aspect_ratio="auto",
+    )
+    await state.set_state(ImageGenerationState.waiting_prompt)
+    await message.answer(
+        PROMPT_REQUEST_TEXT,
+        reply_markup=await ik_prompt_nav(),
     )
 
 

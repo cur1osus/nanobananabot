@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from decimal import Decimal
 
 from aiogram.types import LabeledPrice
 
@@ -27,13 +28,13 @@ class InvoiceConfig:
 
 
 def _receipt_amount_value(price_rub: int) -> str:
-    return f"{price_rub:.2f}"
+    return f"{Decimal(price_rub):.2f}"
 
 
 def build_yookassa_provider_data(*, tariff: TopupTariff) -> str:
     item = {
         "description": f"Пополнение: {tariff.credits} кредитов",
-        "quantity": 1,
+        "quantity": "1.00",
         "amount": {
             "value": _receipt_amount_value(tariff.price),
             "currency": CARD_CURRENCY,

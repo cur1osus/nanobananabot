@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.db.enum import UserRole
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import InfoPeriod, MenuAction
-from bot.keyboards.inline import ik_info_periods
-from bot.utils.admin_stats import build_admin_info_text
+from bot.keyboards.inline import ik_info_periods, ik_runware_account_back
+from bot.utils.admin_stats import build_admin_info_text, fetch_runware_account_text
 from bot.utils.messaging import edit_or_answer
 
 if TYPE_CHECKING:
@@ -33,6 +33,24 @@ async def menu_info(
         await query.answer("Нет доступа.", show_alert=True)
         return
     await _send_info(query, session, redis, period="day")
+
+
+@router.callback_query(MenuAction.filter(F.action == "runware_account"))
+async def menu_runware_account(
+    query: CallbackQuery,
+    user: UserRD,
+) -> None:
+    await query.answer()
+    if user.role != UserRole.ADMIN.value:
+        await query.answer("Нет доступа.", show_alert=True)
+        return
+
+    text = await fetch_runware_account_text()
+    await edit_or_answer(
+        query,
+        text=text,
+        reply_markup=await ik_runware_account_back(),
+    )
 
 
 @router.callback_query(InfoPeriod.filter())

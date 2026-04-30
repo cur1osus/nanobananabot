@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
@@ -188,9 +189,9 @@ def _format_period(start: datetime, end: datetime) -> str:
 
 
 def _supports_balance_endpoint(*, provider: str, base_url: str) -> bool:
-    if provider == "google":
+    if provider in ("google", "runware"):
         return False
-    return "generativelanguage.googleapis.com" not in base_url
+    return True
 
 
 async def _fetch_all_gpt_balances() -> str:
@@ -259,3 +260,88 @@ def _format_delta_int(value: int) -> str:
 def _format_delta_rub(amount: int) -> str:
     sign = "+" if amount >= 0 else "-"
     return f"{sign}{format_rub(abs(amount))} р."
+
+
+async def fetch_runware_account_text() -> str:
+    if se.image_backend.provider != "runware":
+        return "Провайдер не Runware — информация об аккаунте недоступна."
+
+    if not se.image_backend.api_key:
+        return "API ключ не задан (IMAGE_BACKEND_API_KEY)."
+
+    url = f"{se.image_backend.base_url.rstrip('/')}/tasks"
+    payload = [
+        {
+            "taskType": "accountManagement",
+            "taskUUID": str(uuid.uuid4()),
+            "operation": "getDetails",
+        }
+    ]
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=8)
+        proxy_settings = resolve_proxy_settings(se.image_backend.proxy_url)
+        async with create_client_session(timeout=timeout, proxy_settings=proxy_settings) as session:
+            async with session.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {se.image_backend.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            ) as response:
+                if response.status != 200:
+                    body = await response.text()
+                    logger.warning(
+                        "Runware account API error: status=%s body=%s",
+                        response.status,
+                        body[:200],
+                    )
+                    return f"Ошибка Runware API: {response.status}"
+                data = await response.json()
+    except Exception as err:
+        logger.warning("Runware account fetch failed: %s", err)
+        return "Не удалось получить данные аккаунта."
+
+    results = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(results, list) or not results:
+        logger.warning("Runware account unexpected response: %s", data)
+        return "Пустой ответ от Runware API."
+
+    info = results[0]
+    if not isinstance(info, dict):
+        return f"Некорректный ответ: {info}"
+
+    def _get(d: object, *keys: str, default: str = "—") -> str:
+        for k in keys:
+            if not isinstance(d, dict):
+                return default
+            d = d.get(k, default)  # type: ignore[assignment]
+        return str(d) if d != default else default
+
+    org_name = _get(info, "organization", "name")
+    balance_amount = _get(info, "balance", "amount")
+    balance_free = _get(info, "balance", "freeAmount")
+    balance_currency = _get(info, "balance", "currency", default="$")
+
+    today_credits = _get(info, "usage", "today", "credits")
+    today_requests = _get(info, "usage", "today", "requests")
+    week_credits = _get(info, "usage", "last7Days", "credits")
+    week_requests = _get(info, "usage", "last7Days", "requests")
+    month_credits = _get(info, "usage", "last30Days", "credits")
+    month_requests = _get(info, "usage", "last30Days", "requests")
+    total_credits = _get(info, "usage", "total", "credits")
+    total_requests = _get(info, "usage", "total", "requests")
+
+    return (
+        f"🏢 <b>Runware аккаунт</b>\n"
+        f"Организация: {org_name}\n\n"
+        f"💰 <b>Баланс</b>\n"
+        f"Основной: {balance_amount} {balance_currency}\n"
+        f"Бесплатный: {balance_free} {balance_currency}\n\n"
+        f"📈 <b>Использование</b>\n"
+        f"Сегодня: {today_credits} cr / {today_requests} запросов\n"
+        f"7 дней: {week_credits} cr / {week_requests} запросов\n"
+        f"30 дней: {month_credits} cr / {month_requests} запросов\n"
+        f"Всего: {total_credits} cr / {total_requests} запросов"
+    )

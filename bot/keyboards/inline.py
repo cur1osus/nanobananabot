@@ -316,10 +316,24 @@ async def ik_info_periods(selected: str) -> InlineKeyboardMarkup:
             callback_data=InfoPeriod(period=key).pack(),
         )
     builder.button(
+        text="💳 Аккаунт",
+        callback_data=MenuAction(action="runware_account").pack(),
+    )
+    builder.button(
         text=BACK_BUTTON_TEXT,
         callback_data=MenuAction(action="home").pack(),
     )
-    builder.adjust(3, 1, 1)
+    builder.adjust(3, 1, 1, 1)
+    return builder.as_markup()
+
+
+async def ik_runware_account_back() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="← К статистике",
+        callback_data=InfoPeriod(period="day").pack(),
+    )
+    builder.adjust(1)
     return builder.as_markup()
 
 

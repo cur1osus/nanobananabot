@@ -17,6 +17,11 @@ format:
 	uv run ruff format $(app-dir)
 
 
+.PHONY: test
+test:
+	UV_CACHE_DIR=$(UV_CACHE_DIR) uv run --extra dev pytest -q
+
+
 .PHONY: dev
 dev:
 	python3.12 -m compileall bot

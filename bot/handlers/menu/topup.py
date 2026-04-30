@@ -3,16 +3,18 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery
 
+from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import MenuAction, TopupMethod, TopupPlan
 from bot.keyboards.inline import ik_topup_methods, ik_topup_plans
 from bot.utils.messaging import edit_or_answer
 from bot.utils.payments import build_invoice
 from bot.utils.texts import (
-    TOPUP_METHODS_TEXT,
     get_topup_method,
     get_topup_tariff,
+    topup_methods_text,
     topup_tariffs_text,
 )
 
@@ -21,11 +23,11 @@ logger = logging.getLogger(__name__)
 
 
 @router.callback_query(MenuAction.filter(F.action == "topup"))
-async def menu_topup(query: CallbackQuery) -> None:
+async def menu_topup(query: CallbackQuery, user: UserRD) -> None:
     await query.answer()
     await edit_or_answer(
         query,
-        text=TOPUP_METHODS_TEXT,
+        text=topup_methods_text(user),
         reply_markup=await ik_topup_methods(),
     )
 
@@ -70,14 +72,28 @@ async def topup_plan(query: CallbackQuery, callback_data: TopupPlan) -> None:
             reply_markup=await ik_topup_methods(),
         )
         return
-    await query.message.answer_invoice(
-        title=invoice.title,
-        description=invoice.description,
-        payload=invoice.payload,
-        provider_token=invoice.provider_token,
-        currency=invoice.currency,
-        prices=invoice.prices,
-        provider_data=invoice.provider_data,
-        need_email=invoice.need_email,
-        send_email_to_provider=invoice.send_email_to_provider,
-    )
+    try:
+        await query.message.answer_invoice(
+            title=invoice.title,
+            description=invoice.description,
+            payload=invoice.payload,
+            provider_token=invoice.provider_token,
+            currency=invoice.currency,
+            prices=invoice.prices,
+            provider_data=invoice.provider_data,
+            need_email=invoice.need_email,
+            send_email_to_provider=invoice.send_email_to_provider,
+        )
+    except TelegramBadRequest as err:
+        logger.error(
+            "Ошибка sendInvoice: %s | method=%s plan=%s provider_data=%s",
+            err,
+            callback_data.method,
+            callback_data.plan,
+            invoice.provider_data,
+        )
+        await edit_or_answer(
+            query,
+            text="Не удалось создать счет на оплату. Попробуйте еще раз чуть позже.",
+            reply_markup=await ik_topup_methods(),
+        )

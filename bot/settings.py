@@ -35,32 +35,36 @@ class DBSettings:
 class ImageBackendSettings:
     def __init__(self) -> None:
         self.provider = (
-            os.environ.get("IMAGE_BACKEND_PROVIDER", "google").strip().lower()
+            os.environ.get("IMAGE_BACKEND_PROVIDER", "runware").strip().lower()
         )
         self.api_key = os.environ.get("IMAGE_BACKEND_API_KEY", "")
         self.base_url = os.environ.get(
             "IMAGE_BACKEND_BASE_URL",
-            "https://generativelanguage.googleapis.com/v1beta",
+            "https://api.runware.ai/v1",
         )
         self.model = os.environ.get(
             "IMAGE_BACKEND_MODEL",
-            "gemini-2.5-flash-image",
-        )
-        self.edit_model = os.environ.get(
-            "IMAGE_BACKEND_EDIT_MODEL",
-            "gemini-3-pro-image-preview",
+            "google:4@1",
         )
         self.timeout = int(os.environ.get("IMAGE_BACKEND_TIMEOUT", 120))
+        self.total_timeout = max(
+            1,
+            int(os.environ.get("IMAGE_BACKEND_TOTAL_TIMEOUT", 150)),
+        )
         self.retries = max(0, int(os.environ.get("IMAGE_BACKEND_RETRIES", 1)))
         self.retry_backoff = max(
             0.0,
             float(os.environ.get("IMAGE_BACKEND_RETRY_BACKOFF", 2)),
         )
-        self.proxy_url = os.environ.get("IMAGE_BACKEND_PROXY_URL", "")
-        self.fallback_model = (
-            os.environ.get("IMAGE_BACKEND_FALLBACK_MODEL", "").strip()
-            or self.model
+        self.rate_limit_retries = max(
+            0,
+            int(os.environ.get("IMAGE_BACKEND_RATE_LIMIT_RETRIES", 1)),
         )
+        self.rate_limit_backoff = max(
+            0.0,
+            float(os.environ.get("IMAGE_BACKEND_RATE_LIMIT_BACKOFF", 5)),
+        )
+        self.proxy_url = os.environ.get("IMAGE_BACKEND_PROXY_URL", "")
 
 
 class AgentPlatformSettings:
@@ -132,6 +136,7 @@ class TopupSettings:
 class Settings:
     bot_token = os.environ.get("BOT_TOKEN", "")
     sep = os.environ.get("SEP", "\n")
+    admin_ids: list[int] = _parse_int_list(os.environ.get("ADMIN_IDS", ""))
     set_commands_on_startup = os.environ.get(
         "SET_COMMANDS_ON_STARTUP", "true"
     ).lower() in ("true", "1", "yes")
