@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import uuid
 
 import aiohttp
+from runware import IFrameImage, IKlingAIProviderSettings, IVideoInference, Runware
 
 from bot.settings import se
 from bot.utils.video_models import VIDEO_RATIO_DIMS
 
 logger = logging.getLogger(__name__)
 
-RUNWARE_API_URL = "https://api.runware.ai/v1"
 _video_semaphore: asyncio.Semaphore | None = None
+_video_client: Runware | None = None
 
 
 def _get_video_semaphore() -> asyncio.Semaphore:
@@ -20,6 +20,19 @@ def _get_video_semaphore() -> asyncio.Semaphore:
     if _video_semaphore is None:
         _video_semaphore = asyncio.Semaphore(2)
     return _video_semaphore
+
+
+async def _get_video_client() -> Runware:
+    global _video_client
+    total_timeout_ms = max(se.image_backend.total_timeout, 300) * 1000
+    if _video_client is None:
+        _video_client = Runware(
+            api_key=se.image_backend.api_key,
+            timeout=total_timeout_ms,
+        )
+    if not _video_client.connected():
+        await _video_client.connect()
+    return _video_client
 
 
 class VideoGenerationError(RuntimeError):
@@ -54,49 +67,46 @@ async def generate_video(
     image_input_type: str = "frameImages",
     needs_provider_settings: bool = False,
 ) -> bytes:
-    """Generate video via Runware Kling REST API."""
+    """Generate video via Runware SDK."""
     if not se.image_backend.api_key:
         raise VideoGenerationError(
             "Не настроен ключ API (IMAGE_BACKEND_API_KEY)."
         )
 
-    task_uuid = str(uuid.uuid4())
-    task: dict = {
-        "taskType": "videoInference",
-        "taskUUID": task_uuid,
+    frame_images: list[IFrameImage] = []
+    reference_images: list[str] = []
+    provider_settings: IKlingAIProviderSettings | None = None
+
+    if reference_image:
+        if image_input_type == "referenceImages":
+            reference_images = [reference_image]
+        else:
+            frame_images = [IFrameImage(inputImage=reference_image, frame="first")]
+        if needs_provider_settings:
+            provider_settings = IKlingAIProviderSettings(characterOrientation="image")
+
+    request_kwargs: dict = {
         "model": runware_model,
         "positivePrompt": prompt,
         "numberResults": 1,
         "outputType": "URL",
     }
-
     if supports_duration:
-        task["duration"] = duration
-
+        request_kwargs["duration"] = duration
     if supports_dimensions:
         dims = VIDEO_RATIO_DIMS.get(aspect_ratio, (960, 960))
-        task["width"] = dims[0]
-        task["height"] = dims[1]
+        request_kwargs["width"] = dims[0]
+        request_kwargs["height"] = dims[1]
+    if frame_images:
+        request_kwargs["frameImages"] = frame_images
+    if reference_images:
+        request_kwargs["referenceImages"] = reference_images
+    if provider_settings:
+        request_kwargs["providerSettings"] = provider_settings
 
-    if supports_sound and with_audio:
-        task["sound"] = True
+    request = IVideoInference(**request_kwargs)
 
-    if reference_image:
-        if image_input_type == "referenceImages":
-            task["inputs"] = {"referenceImages": [reference_image]}
-        else:
-            task["inputs"] = {
-                "frameImages": [{"image": reference_image, "frame": "first"}]
-            }
-        if needs_provider_settings:
-            task["providerSettings"] = {
-                "klingai": {"characterOrientation": "image"}
-            }
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {se.image_backend.api_key}",
-    }
+    total_timeout = max(se.image_backend.total_timeout, 300)
 
     logger.info(
         "Video generation request: model=%s duration=%s ratio=%s image=%s",
@@ -106,40 +116,24 @@ async def generate_video(
         bool(reference_image),
     )
 
-    total_timeout = max(se.image_backend.total_timeout, 300)
-
     async with _get_video_semaphore():
         try:
             async with asyncio.timeout(total_timeout):
-                request_timeout = aiohttp.ClientTimeout(total=total_timeout)
-                async with aiohttp.ClientSession(timeout=request_timeout) as session:
-                    async with session.post(
-                        RUNWARE_API_URL,
-                        json=[task],
-                        headers=headers,
-                    ) as response:
-                        if response.status >= 400:
-                            body = await response.text()
-                            raise VideoGenerationError(
-                                f"Runware API вернул {response.status}: {body[:300]}"
-                            )
-                        result = await response.json()
+                client = await _get_video_client()
+                try:
+                    videos = await client.videoInference(requestVideo=request)
+                except Exception as exc:
+                    raise VideoGenerationError(f"Ошибка Runware SDK: {exc}") from exc
 
-                if not isinstance(result, list) or not result:
+                if not videos:
                     raise VideoGenerationError(
-                        f"Runware API вернул неожиданный ответ: {result}"
+                        f"Runware SDK не вернул видео (model={runware_model})"
                     )
 
-                item = result[0]
-                if item.get("taskType") == "error":
+                video_url = videos[0].videoURL
+                if not isinstance(video_url, str) or not video_url:
                     raise VideoGenerationError(
-                        f"Runware API ошибка: {item.get('message', item)}"
-                    )
-
-                video_url = item.get("videoURL") or item.get("url")
-                if not video_url:
-                    raise VideoGenerationError(
-                        f"Runware API не вернул videoURL: {item}"
+                        f"Runware SDK не вернул videoURL (model={runware_model}): {videos[0]}"
                     )
 
                 return await _download_video(video_url, timeout=120)
