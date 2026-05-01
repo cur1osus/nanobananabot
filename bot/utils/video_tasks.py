@@ -90,6 +90,9 @@ async def generate_video(
         "positivePrompt": prompt,
         "numberResults": 1,
         "outputType": "URL",
+        # Explicitly None to prevent SDK from serialising empty-list defaults
+        "frameImages": frame_images or None,
+        "referenceImages": reference_images or None,
     }
     if supports_duration:
         request_kwargs["duration"] = duration
@@ -97,10 +100,6 @@ async def generate_video(
         dims = VIDEO_RATIO_DIMS.get(aspect_ratio, (960, 960))
         request_kwargs["width"] = dims[0]
         request_kwargs["height"] = dims[1]
-    if frame_images:
-        request_kwargs["frameImages"] = frame_images
-    if reference_images:
-        request_kwargs["referenceImages"] = reference_images
     if provider_settings:
         request_kwargs["providerSettings"] = provider_settings
 
