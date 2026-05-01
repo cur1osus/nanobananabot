@@ -6,6 +6,7 @@ import uuid
 
 import aiohttp
 from aiogram import F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from redis.asyncio import Redis
@@ -708,16 +709,12 @@ async def remind_create_prompt_photo(message: Message) -> None:
     )
 
 
-@router.message(F.photo)
-@router.message(F.document, F.document.mime_type.startswith("image/"))
+@router.message(StateFilter(None, BaseUserState.main), F.photo)
+@router.message(StateFilter(None, BaseUserState.main), F.document, F.document.mime_type.startswith("image/"))
 async def quick_start_from_photo(
     message: Message,
     state: FSMContext,
 ) -> None:
-    current_state = await state.get_state()
-    if current_state not in (None, BaseUserState.main.state):
-        return
-
     if message.photo:
         file_id = message.photo[-1].file_id
     elif message.document:
