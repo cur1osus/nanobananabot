@@ -20,7 +20,7 @@ from bot.keyboards.factories import (
 )
 from bot.utils.image_models import IMAGE_MODELS, DEFAULT_IMAGE_MODEL_KEY
 from bot.utils.texts import get_topup_method, get_topup_tariffs
-from bot.utils.video_models import KLING_MODELS, VIDEO_RATIO_MAP, VIDEO_RATIOS
+from bot.utils.video_models import KLING_MODELS, VIDEO_RATIO_MAP, VIDEO_RATIOS, get_kling_model
 
 LIMIT_BUTTONS: Final[int] = 100
 BACK_BUTTON_TEXT = "🔙 Назад"
@@ -351,47 +351,59 @@ async def ik_video_settings(
     aspect_ratio: str,
     with_audio: bool,
 ) -> InlineKeyboardMarkup:
+    model = get_kling_model(model_key)
     builder = InlineKeyboardBuilder()
-    builder.button(
-        text="📝 Промпт",
-        callback_data=VideoNav(action="set_prompt").pack(),
-    )
-    builder.button(
-        text="🖼 Изображение",
-        callback_data=VideoNav(action="set_image").pack(),
-    )
-    audio_label = "✅ Со звуком" if with_audio else "Без звука"
-    builder.button(
-        text=audio_label,
-        callback_data=VideoSetting(setting="audio", value="0" if with_audio else "1").pack(),
-    )
-    for d in (5, 10):
-        label = f"✅ {d} сек." if duration == d else f"{d} сек."
+    row_sizes: list[int] = []
+
+    # Промпт + Изображение
+    builder.button(text="📝 Промпт", callback_data=VideoNav(action="set_prompt").pack())
+    builder.button(text="🖼 Изображение", callback_data=VideoNav(action="set_image").pack())
+    row_sizes.append(2)
+
+    # Звук — только если модель поддерживает
+    if model.supports_sound:
+        audio_label = "✅ Со звуком" if with_audio else "Без звука"
+        builder.button(
+            text=audio_label,
+            callback_data=VideoSetting(setting="audio", value="0" if with_audio else "1").pack(),
+        )
+        row_sizes.append(1)
+
+    # Длительность — только если модель поддерживает
+    if model.supports_duration:
+        for d in (5, 10):
+            label = f"✅ {d} сек." if duration == d else f"{d} сек."
+            builder.button(
+                text=label,
+                callback_data=VideoSetting(setting="duration", value=str(d)).pack(),
+            )
+        row_sizes.append(2)
+
+    # Модели (всегда по 2 в ряд)
+    for m in KLING_MODELS:
+        label = f"✅ {m.title}" if m.key == model_key else m.title
         builder.button(
             text=label,
-            callback_data=VideoSetting(setting="duration", value=str(d)).pack(),
+            callback_data=VideoSetting(setting="model", value=m.key).pack(),
         )
-    for model in KLING_MODELS:
-        label = f"✅ {model.title}" if model.key == model_key else model.title
-        builder.button(
-            text=label,
-            callback_data=VideoSetting(setting="model", value=model.key).pack(),
-        )
-    for key, ratio in VIDEO_RATIO_MAP.items():
-        label = f"✅ {ratio}" if ratio == aspect_ratio else ratio
-        builder.button(
-            text=label,
-            callback_data=VideoAspectRatio(ratio=key).pack(),
-        )
-    builder.button(
-        text="← Назад",
-        callback_data=MenuAction(action="home").pack(),
-    )
-    builder.button(
-        text="🎬 Начать генерацию",
-        callback_data=VideoNav(action="generate").pack(),
-    )
-    builder.adjust(2, 1, 2, 2, 2, 3, 2)
+    row_sizes.extend([2, 2])
+
+    # Соотношение сторон — только если модель поддерживает
+    if model.supports_dimensions:
+        for key, ratio in VIDEO_RATIO_MAP.items():
+            label = f"✅ {ratio}" if ratio == aspect_ratio else ratio
+            builder.button(
+                text=label,
+                callback_data=VideoAspectRatio(ratio=key).pack(),
+            )
+        row_sizes.append(3)
+
+    # Назад + Генерация
+    builder.button(text="← Назад", callback_data=MenuAction(action="home").pack())
+    builder.button(text="🎬 Начать генерацию", callback_data=VideoNav(action="generate").pack())
+    row_sizes.append(2)
+
+    builder.adjust(*row_sizes)
     return builder.as_markup()
 
 

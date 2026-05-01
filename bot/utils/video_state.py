@@ -74,12 +74,29 @@ def video_settings_text(data: VideoFlowData) -> str:
     image_line = "добавлено ✅" if data.image_file_id else "не добавлено"
     model = get_kling_model(data.model_key)
     cost = video_cost(data.model_key, data.duration)
-    return (
-        "В этом разделе нужно задать настройки для видео, которое будет сгенерировано с помощью Kling:\n\n"
-        "1. Опишите видео в разделе «Промпт»\n"
-        "2. Можете добавить изображение: оно станет основой для видео\n"
-        "3. Выберите продолжительность (5 или 10 сек.) и формат (1:1, 16:9 или 9:16)\n\n"
-        f"📝 <b>Текущий промпт:</b> {prompt_line}\n"
-        f"🌅 <b>Изображение:</b> {image_line}\n"
-        f"💰 <b>Стоимость:</b> {cost} кредитов ({model.title}, {data.duration} сек.)"
-    )
+
+    limitations: list[str] = []
+    if not model.supports_duration:
+        limitations.append("длительность фиксирована (5 сек.)")
+    if not model.supports_dimensions:
+        limitations.append("формат фиксирован")
+    if not model.supports_sound:
+        limitations.append("звук недоступен")
+
+    lines = [
+        "🎬 <b>Настройки видео (Kling)</b>\n",
+        "1. Опишите видео в разделе «Промпт»",
+        "2. Можно добавить изображение как основу для видео",
+    ]
+    if model.supports_duration or model.supports_dimensions:
+        lines.append("3. Выберите продолжительность и формат")
+    if limitations:
+        lines.append(f"\n⚠️ <b>{model.title}:</b> {', '.join(limitations)}")
+
+    lines += [
+        "",
+        f"📝 <b>Промпт:</b> {prompt_line}",
+        f"🌅 <b>Изображение:</b> {image_line}",
+        f"💰 <b>Стоимость:</b> {cost} кредитов",
+    ]
+    return "\n".join(lines)
