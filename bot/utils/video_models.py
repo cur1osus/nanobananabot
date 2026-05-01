@@ -40,7 +40,7 @@ KLING_MODELS: Final[tuple[KlingModelOption, ...]] = (
         cost_5s=15,
         cost_10s=30,
         supports_duration=True,
-        supports_dimensions=False,
+        supports_dimensions=True,
         supports_sound=False,
         image_input_type="frameImages",
     ),
@@ -81,9 +81,9 @@ VIDEO_RATIO_MAP: Final[dict[str, str]] = {
 VIDEO_RATIOS: Final[tuple[str, ...]] = ("1:1", "16:9", "9:16")
 
 VIDEO_RATIO_DIMS: Final[dict[str, tuple[int, int]]] = {
-    "1:1": (960, 960),
-    "16:9": (1280, 720),
-    "9:16": (720, 1280),
+    "1:1": (1440, 1440),
+    "16:9": (1920, 1080),
+    "9:16": (1080, 1920),
 }
 
 
