@@ -266,6 +266,9 @@ async def start_video_generation(
             aspect_ratio=data.aspect_ratio,
             with_audio=data.with_audio,
             reference_image=reference_image,
+            supports_duration=model.supports_duration,
+            supports_dimensions=model.supports_dimensions,
+            supports_sound=model.supports_sound,
         )
         await deduct_user_credits(
             session=session,

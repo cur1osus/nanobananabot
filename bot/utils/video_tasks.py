@@ -7,6 +7,7 @@ import uuid
 import aiohttp
 
 from bot.settings import se
+from bot.utils.video_models import VIDEO_RATIO_DIMS
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,9 @@ async def generate_video(
     aspect_ratio: str = "1:1",
     with_audio: bool = True,
     reference_image: str | None = None,
+    supports_duration: bool = False,
+    supports_dimensions: bool = False,
+    supports_sound: bool = False,
 ) -> bytes:
     """Generate video via Runware Kling REST API."""
     if not se.image_backend.api_key:
@@ -60,13 +64,23 @@ async def generate_video(
         "taskUUID": task_uuid,
         "model": runware_model,
         "positivePrompt": prompt,
-        "duration": duration,
-        "ratio": aspect_ratio,
-        "generateAudio": with_audio,
         "numberResults": 1,
+        "outputType": "URL",
     }
+
+    if supports_duration:
+        task["duration"] = duration
+
+    if supports_dimensions:
+        dims = VIDEO_RATIO_DIMS.get(aspect_ratio, (960, 960))
+        task["width"] = dims[0]
+        task["height"] = dims[1]
+
+    if supports_sound and with_audio:
+        task["sound"] = True
+
     if reference_image:
-        task["referenceImage"] = reference_image
+        task["referenceImages"] = [reference_image]
 
     headers = {
         "Content-Type": "application/json",
@@ -74,11 +88,12 @@ async def generate_video(
     }
 
     logger.info(
-        "Video generation request: model=%s duration=%ds ratio=%s audio=%s",
+        "Video generation request: model=%s duration=%ds ratio=%s audio=%s dims=%s",
         runware_model,
-        duration,
-        aspect_ratio,
-        with_audio,
+        duration if supports_duration else "fixed",
+        aspect_ratio if supports_dimensions else "fixed",
+        with_audio if supports_sound else "n/a",
+        supports_dimensions,
     )
 
     total_timeout = max(se.image_backend.total_timeout, 300)
