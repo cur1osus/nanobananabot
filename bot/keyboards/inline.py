@@ -13,10 +13,13 @@ from bot.keyboards.factories import (
     ModelSelect,
     TopupMethod,
     TopupPlan,
+    VideoNav,
+    VideoSetting,
     WithdrawAction,
 )
 from bot.utils.image_models import IMAGE_MODELS, DEFAULT_IMAGE_MODEL_KEY
 from bot.utils.texts import get_topup_method, get_topup_tariffs
+from bot.utils.video_models import KLING_MODELS, VIDEO_RATIOS
 
 LIMIT_BUTTONS: Final[int] = 100
 BACK_BUTTON_TEXT = "🔙 Назад"
@@ -155,6 +158,10 @@ async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:
     builder.button(
         text="✨ Генерация изображения",
         callback_data=MenuAction(action="image").pack(),
+    )
+    builder.button(
+        text="🎬 Создать видео",
+        callback_data=MenuAction(action="video").pack(),
     )
     builder.button(
         text="ℹ️ Как это работает?",
@@ -332,6 +339,66 @@ async def ik_runware_account_back() -> InlineKeyboardMarkup:
     builder.button(
         text="← К статистике",
         callback_data=InfoPeriod(period="day").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_video_settings(
+    model_key: str,
+    duration: int,
+    aspect_ratio: str,
+    with_audio: bool,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="📝 Промпт",
+        callback_data=VideoNav(action="set_prompt").pack(),
+    )
+    builder.button(
+        text="🖼 Изображение",
+        callback_data=VideoNav(action="set_image").pack(),
+    )
+    audio_label = "✅ Со звуком" if with_audio else "Без звука"
+    builder.button(
+        text=audio_label,
+        callback_data=VideoSetting(setting="audio", value="0" if with_audio else "1").pack(),
+    )
+    for d in (5, 10):
+        label = f"✅ {d} сек." if duration == d else f"{d} сек."
+        builder.button(
+            text=label,
+            callback_data=VideoSetting(setting="duration", value=str(d)).pack(),
+        )
+    for model in KLING_MODELS:
+        label = f"✅ {model.title}" if model.key == model_key else model.title
+        builder.button(
+            text=label,
+            callback_data=VideoSetting(setting="model", value=model.key).pack(),
+        )
+    for ratio in VIDEO_RATIOS:
+        label = f"✅ {ratio}" if ratio == aspect_ratio else ratio
+        builder.button(
+            text=label,
+            callback_data=VideoSetting(setting="ratio", value=ratio).pack(),
+        )
+    builder.button(
+        text="← Назад",
+        callback_data=MenuAction(action="home").pack(),
+    )
+    builder.button(
+        text="🎬 Начать генерацию",
+        callback_data=VideoNav(action="generate").pack(),
+    )
+    builder.adjust(2, 1, 2, 2, 2, 3, 2)
+    return builder.as_markup()
+
+
+async def ik_video_back_to_settings() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="← К настройкам",
+        callback_data=VideoNav(action="back_to_settings").pack(),
     )
     builder.adjust(1)
     return builder.as_markup()

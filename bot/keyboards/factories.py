@@ -41,3 +41,12 @@ class WithdrawAction(CallbackData, prefix="withdraw"):
 
 class InfoPeriod(CallbackData, prefix="info_period"):
     period: str
+
+
+class VideoSetting(CallbackData, prefix="video_setting"):
+    setting: str
+    value: str
+
+
+class VideoNav(CallbackData, prefix="video_nav"):
+    action: str

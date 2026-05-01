@@ -43,7 +43,10 @@ async def notify_admins_error(
 
     text = "\n".join(lines)
     if len(text) > _MAX_TEXT_LEN:
-        text = text[:_MAX_TEXT_LEN] + "\n…"
+        text = text[:_MAX_TEXT_LEN]
+        if text.count("<pre>") > text.count("</pre>"):
+            text += "</pre>"
+        text += "\n…"
 
     for admin_id in se.admin_ids:
         try:

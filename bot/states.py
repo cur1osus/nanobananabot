@@ -23,5 +23,11 @@ class ManagerWithdrawState(StatesGroup):
     error_reason = State()
 
 
+class VideoGenerationState(StatesGroup):
+    settings = State()
+    waiting_prompt = State()
+    waiting_image = State()
+
+
 class SpeechTestState(StatesGroup):
     waiting = State()
