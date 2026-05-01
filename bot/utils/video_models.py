@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, Literal
 
 
 @dataclass(frozen=True)
@@ -14,6 +14,10 @@ class KlingModelOption:
     supports_duration: bool = False
     supports_dimensions: bool = False
     supports_sound: bool = False
+    # "referenceImages" for 2.6, "frameImages" for all others
+    image_input_type: Literal["referenceImages", "frameImages"] = "frameImages"
+    # 2.6 requires providerSettings.klingai when passing an image
+    needs_provider_settings: bool = False
 
 
 KLING_MODELS: Final[tuple[KlingModelOption, ...]] = (
@@ -26,6 +30,8 @@ KLING_MODELS: Final[tuple[KlingModelOption, ...]] = (
         supports_duration=False,
         supports_dimensions=False,
         supports_sound=False,
+        image_input_type="referenceImages",
+        needs_provider_settings=True,
     ),
     KlingModelOption(
         key="3.0",
@@ -36,6 +42,7 @@ KLING_MODELS: Final[tuple[KlingModelOption, ...]] = (
         supports_duration=True,
         supports_dimensions=True,
         supports_sound=False,
+        image_input_type="frameImages",
     ),
     KlingModelOption(
         key="o1",
@@ -46,6 +53,7 @@ KLING_MODELS: Final[tuple[KlingModelOption, ...]] = (
         supports_duration=True,
         supports_dimensions=True,
         supports_sound=False,
+        image_input_type="frameImages",
     ),
     KlingModelOption(
         key="2.5turbo",
@@ -56,6 +64,7 @@ KLING_MODELS: Final[tuple[KlingModelOption, ...]] = (
         supports_duration=False,
         supports_dimensions=False,
         supports_sound=False,
+        image_input_type="frameImages",
     ),
 )
 

@@ -51,6 +51,8 @@ async def generate_video(
     supports_duration: bool = False,
     supports_dimensions: bool = False,
     supports_sound: bool = False,
+    image_input_type: str = "frameImages",
+    needs_provider_settings: bool = False,
 ) -> bytes:
     """Generate video via Runware Kling REST API."""
     if not se.image_backend.api_key:
@@ -80,7 +82,16 @@ async def generate_video(
         task["sound"] = True
 
     if reference_image:
-        task["referenceImages"] = [reference_image]
+        if image_input_type == "referenceImages":
+            task["inputs"] = {"referenceImages": [reference_image]}
+        else:
+            task["inputs"] = {
+                "frameImages": [{"image": reference_image, "frame": "first"}]
+            }
+        if needs_provider_settings:
+            task["providerSettings"] = {
+                "klingai": {"characterOrientation": "image"}
+            }
 
     headers = {
         "Content-Type": "application/json",
@@ -88,12 +99,11 @@ async def generate_video(
     }
 
     logger.info(
-        "Video generation request: model=%s duration=%ds ratio=%s audio=%s dims=%s",
+        "Video generation request: model=%s duration=%s ratio=%s image=%s",
         runware_model,
         duration if supports_duration else "fixed",
         aspect_ratio if supports_dimensions else "fixed",
-        with_audio if supports_sound else "n/a",
-        supports_dimensions,
+        bool(reference_image),
     )
 
     total_timeout = max(se.image_backend.total_timeout, 300)

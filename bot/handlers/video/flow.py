@@ -269,6 +269,8 @@ async def start_video_generation(
             supports_duration=model.supports_duration,
             supports_dimensions=model.supports_dimensions,
             supports_sound=model.supports_sound,
+            image_input_type=model.image_input_type,
+            needs_provider_settings=model.needs_provider_settings,
         )
         await deduct_user_credits(
             session=session,
