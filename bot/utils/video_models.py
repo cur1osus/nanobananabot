@@ -40,7 +40,7 @@ KLING_MODELS: Final[tuple[KlingModelOption, ...]] = (
         cost_5s=15,
         cost_10s=30,
         supports_duration=True,
-        supports_dimensions=True,
+        supports_dimensions=False,
         supports_sound=False,
         image_input_type="frameImages",
     ),
