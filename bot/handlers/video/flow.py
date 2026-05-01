@@ -279,8 +279,9 @@ async def start_video_generation(
             amount=cost,
         )
         filename = f"video_{task_id}.mp4"
-        await query.message.answer_document(
-            document=BufferedInputFile(file=video_bytes, filename=filename),
+        video_file = BufferedInputFile(file=video_bytes, filename=filename)
+        await query.message.answer_video(
+            video=video_file,
             caption=(
                 f"🎬 Готово!\n"
                 f"📹 Модель: {model.title}\n"
@@ -288,6 +289,10 @@ async def start_video_generation(
                 f"💰 Списано: {cost} кредитов"
             ),
             reply_markup=await ik_back_home(),
+        )
+        await query.message.answer_document(
+            document=BufferedInputFile(file=video_bytes, filename=filename),
+            caption="📥 Файл для скачивания",
         )
         await status_msg.delete()
 
