@@ -120,7 +120,11 @@ async def generate_video(
             async with asyncio.timeout(total_timeout):
                 client = await _get_video_client()
                 try:
-                    videos = await client.videoInference(requestVideo=request)
+                    response = await client.videoInference(requestVideo=request)
+                    # Video API only supports async delivery — poll for the result
+                    videos = await client.getResponse(
+                        taskUUID=response.taskUUID, numberResults=1
+                    )
                 except Exception as exc:
                     raise VideoGenerationError(f"Ошибка Runware SDK: {exc}") from exc
 
