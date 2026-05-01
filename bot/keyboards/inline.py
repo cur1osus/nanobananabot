@@ -380,7 +380,7 @@ async def ik_video_settings(
         label = f"✅ {ratio}" if ratio == aspect_ratio else ratio
         builder.button(
             text=label,
-            callback_data=VideoSetting(setting="ratio", value=ratio).pack(),
+            callback_data=VideoSetting(setting="ratio", value=ratio.replace(":", "x")).pack(),
         )
     builder.button(
         text="← Назад",

@@ -76,8 +76,9 @@ async def handle_video_setting(
 
     elif callback_data.setting == "ratio":
         from bot.utils.video_models import VIDEO_RATIOS
-        if callback_data.value in VIDEO_RATIOS:
-            data.aspect_ratio = callback_data.value
+        ratio = callback_data.value.replace("x", ":")
+        if ratio in VIDEO_RATIOS:
+            data.aspect_ratio = ratio
 
     elif callback_data.setting == "audio":
         data.with_audio = callback_data.value == "1"
