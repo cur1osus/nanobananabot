@@ -35,7 +35,7 @@ KLING_MODELS: Final[tuple[KlingModelOption, ...]] = (
         cost_10s=30,
         supports_duration=True,
         supports_dimensions=True,
-        supports_sound=True,
+        supports_sound=False,
     ),
     KlingModelOption(
         key="o1",
