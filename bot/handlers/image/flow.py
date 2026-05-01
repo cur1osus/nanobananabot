@@ -548,6 +548,8 @@ async def handle_result_actions(
 
 @router.message(ImageGenerationState.waiting_photos, F.photo)
 @router.message(ImageGenerationState.waiting_prompt, F.photo)
+@router.message(ImageGenerationState.waiting_photos, F.document, F.document.mime_type.startswith("image/"))
+@router.message(ImageGenerationState.waiting_prompt, F.document, F.document.mime_type.startswith("image/"))
 async def collect_photos(
     message: Message,
     state: FSMContext,
@@ -558,13 +560,20 @@ async def collect_photos(
     if len(photos) >= max_references:
         await message.answer(f"Можно отправить максимум {max_references} фото.")
         return
-    if not message.photo:
+    if message.photo:
+        photo_size = message.photo[-1]
+        file_id = photo_size.file_id
+        width, height = photo_size.width, photo_size.height
+    elif message.document:
+        file_id = message.document.file_id
+        thumb = message.document.thumbnail
+        width, height = (thumb.width, thumb.height) if thumb else (None, None)
+    else:
         return
-    photo = message.photo[-1]
-    photos.append(photo.file_id)
+    photos.append(file_id)
     aspect_ratio = data.aspect_ratio
-    if len(photos) == 1:
-        aspect_ratio = closest_aspect_ratio(photo.width, photo.height)
+    if len(photos) == 1 and width and height:
+        aspect_ratio = closest_aspect_ratio(width, height)
 
     prompt_requested = data.prompt_requested
     if not prompt_requested:
@@ -691,6 +700,7 @@ async def select_create_aspect_ratio(
 
 
 @router.message(ImageGenerationState.waiting_create_prompt, F.photo)
+@router.message(ImageGenerationState.waiting_create_prompt, F.document, F.document.mime_type.startswith("image/"))
 async def remind_create_prompt_photo(message: Message) -> None:
     await message.answer(
         "В режиме создания фото не нужны. Пришлите только текстовый промпт.",
@@ -699,6 +709,7 @@ async def remind_create_prompt_photo(message: Message) -> None:
 
 
 @router.message(F.photo)
+@router.message(F.document, F.document.mime_type.startswith("image/"))
 async def quick_start_from_photo(
     message: Message,
     state: FSMContext,
@@ -707,7 +718,11 @@ async def quick_start_from_photo(
     if current_state not in (None, BaseUserState.main.state):
         return
 
-    if not message.photo:
+    if message.photo:
+        file_id = message.photo[-1].file_id
+    elif message.document:
+        file_id = message.document.file_id
+    else:
         return
 
     data = await get_image_data(state)
@@ -720,7 +735,7 @@ async def quick_start_from_photo(
     await update_image_data(
         state,
         model_key=model_key,
-        photos=[message.photo[-1].file_id],
+        photos=[file_id],
         prompt="",
         prompt_requested=True,
         aspect_ratio="auto",
