@@ -13,13 +13,14 @@ from bot.keyboards.factories import (
     ModelSelect,
     TopupMethod,
     TopupPlan,
+    VideoAspectRatio,
     VideoNav,
     VideoSetting,
     WithdrawAction,
 )
 from bot.utils.image_models import IMAGE_MODELS, DEFAULT_IMAGE_MODEL_KEY
 from bot.utils.texts import get_topup_method, get_topup_tariffs
-from bot.utils.video_models import KLING_MODELS, VIDEO_RATIOS
+from bot.utils.video_models import KLING_MODELS, VIDEO_RATIO_MAP, VIDEO_RATIOS
 
 LIMIT_BUTTONS: Final[int] = 100
 BACK_BUTTON_TEXT = "🔙 Назад"
@@ -376,11 +377,11 @@ async def ik_video_settings(
             text=label,
             callback_data=VideoSetting(setting="model", value=model.key).pack(),
         )
-    for ratio in VIDEO_RATIOS:
+    for key, ratio in VIDEO_RATIO_MAP.items():
         label = f"✅ {ratio}" if ratio == aspect_ratio else ratio
         builder.button(
             text=label,
-            callback_data=VideoSetting(setting="ratio", value=ratio.replace(":", "x")).pack(),
+            callback_data=VideoAspectRatio(ratio=key).pack(),
         )
     builder.button(
         text="← Назад",

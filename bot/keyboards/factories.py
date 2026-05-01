@@ -48,5 +48,9 @@ class VideoSetting(CallbackData, prefix="video_setting"):
     value: str
 
 
+class VideoAspectRatio(CallbackData, prefix="video_ratio"):
+    ratio: str
+
+
 class VideoNav(CallbackData, prefix="video_nav"):
     action: str

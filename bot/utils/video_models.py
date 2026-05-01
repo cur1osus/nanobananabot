@@ -48,6 +48,12 @@ DEFAULT_KLING_MODEL_KEY: Final[str] = "2.6"
 DEFAULT_VIDEO_DURATION: Final[int] = 5
 DEFAULT_VIDEO_RATIO: Final[str] = "1:1"
 
+VIDEO_RATIO_MAP: Final[dict[str, str]] = {
+    "1x1": "1:1",
+    "16x9": "16:9",
+    "9x16": "9:16",
+}
+
 VIDEO_RATIOS: Final[tuple[str, ...]] = ("1:1", "16:9", "9:16")
 
 

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db.func import deduct_user_credits
 from bot.db.redis.user_model import UserRD
-from bot.keyboards.factories import VideoNav, VideoSetting
+from bot.keyboards.factories import VideoAspectRatio, VideoNav, VideoSetting
 from bot.keyboards.inline import (
     ik_back_home,
     ik_video_back_to_settings,
@@ -22,7 +22,7 @@ from bot.keyboards.inline import (
 from bot.states import VideoGenerationState
 from bot.utils.admin_notify import notify_admins_error
 from bot.utils.messaging import edit_or_answer
-from bot.utils.video_models import get_kling_model, video_cost
+from bot.utils.video_models import VIDEO_RATIO_MAP, get_kling_model, video_cost
 from bot.utils.video_state import get_video_data, update_video_data, video_settings_text
 from bot.utils.video_tasks import (
     VideoGenerationError,
@@ -74,12 +74,6 @@ async def handle_video_setting(
         except ValueError:
             pass
 
-    elif callback_data.setting == "ratio":
-        from bot.utils.video_models import VIDEO_RATIOS
-        ratio = callback_data.value.replace("x", ":")
-        if ratio in VIDEO_RATIOS:
-            data.aspect_ratio = ratio
-
     elif callback_data.setting == "audio":
         data.with_audio = callback_data.value == "1"
 
@@ -97,6 +91,29 @@ async def handle_video_setting(
             with_audio=data.with_audio,
         ),
     )
+
+
+@router.callback_query(VideoAspectRatio.filter())
+async def handle_video_ratio(
+    query: CallbackQuery,
+    callback_data: VideoAspectRatio,
+    state: FSMContext,
+) -> None:
+    await query.answer()
+    ratio = VIDEO_RATIO_MAP.get(callback_data.ratio)
+    if ratio:
+        data = await update_video_data(state, aspect_ratio=ratio)
+        await state.set_state(VideoGenerationState.settings)
+        await edit_or_answer(
+            query,
+            text=video_settings_text(data),
+            reply_markup=await ik_video_settings(
+                model_key=data.model_key,
+                duration=data.duration,
+                aspect_ratio=data.aspect_ratio,
+                with_audio=data.with_audio,
+            ),
+        )
 
 
 @router.callback_query(VideoNav.filter(F.action == "set_prompt"))
