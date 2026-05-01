@@ -17,30 +17,30 @@ KLING_MODELS: Final[tuple[KlingModelOption, ...]] = (
     KlingModelOption(
         key="2.6",
         title="Kling 2.6",
-        runware_model="klingai:kling-video@2-6-standard",
+        runware_model="klingai:kling-video@2.6-standard",
         cost_5s=10,
         cost_10s=20,
     ),
     KlingModelOption(
         key="3.0",
         title="Kling 3.0 🆕",
-        runware_model="klingai:kling-video@3-0-standard",
+        runware_model="klingai:kling-video@3-standard",
         cost_5s=15,
         cost_10s=30,
     ),
     KlingModelOption(
         key="o1",
         title="Kling O1",
-        runware_model="klingai:kling-video@o1-standard",
+        runware_model="klingai:kling@o1-standard",
         cost_5s=12,
         cost_10s=24,
     ),
     KlingModelOption(
-        key="o3",
-        title="Kling O3",
-        runware_model="klingai:kling-video@o3-standard",
-        cost_5s=15,
-        cost_10s=30,
+        key="2.5turbo",
+        title="Kling 2.5 Turbo",
+        runware_model="klingai:6@0",
+        cost_5s=8,
+        cost_10s=16,
     ),
 )
 
