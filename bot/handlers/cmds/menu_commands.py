@@ -19,8 +19,9 @@ from bot.keyboards.inline import (
     ik_how_menu,
     ik_image_model_select,
     ik_topup_methods,
+    ik_video_settings,
 )
-from bot.states import ImageGenerationState
+from bot.states import ImageGenerationState, VideoGenerationState
 from bot.utils.image_models import DEFAULT_IMAGE_MODEL_KEY
 from bot.utils.image_state import get_image_data, update_image_data
 from bot.utils.texts import (
@@ -30,6 +31,12 @@ from bot.utils.texts import (
     earn_text,
     how_text,
     model_panel_text,
+)
+from bot.utils.video_models import DEFAULT_KLING_MODEL_KEY
+from bot.utils.video_state import (
+    get_video_data,
+    update_video_data,
+    video_settings_text,
 )
 
 router = Router()
@@ -81,6 +88,27 @@ async def cmd_model(message: Message, state: FSMContext, user: UserRD) -> None:
     await message.answer(
         model_panel_text(user, selected_key),
         reply_markup=await ik_image_model_select(selected_key),
+    )
+
+
+@router.message(Command("create_video"))
+async def cmd_create_video(message: Message, state: FSMContext) -> None:
+    await update_video_data(
+        state,
+        model_key=DEFAULT_KLING_MODEL_KEY,
+        prompt="",
+        image_file_id="",
+    )
+    await state.set_state(VideoGenerationState.settings)
+    data = await get_video_data(state)
+    await message.answer(
+        video_settings_text(data),
+        reply_markup=await ik_video_settings(
+            model_key=data.model_key,
+            duration=data.duration,
+            aspect_ratio=data.aspect_ratio,
+            with_audio=data.with_audio,
+        ),
     )
 
 
