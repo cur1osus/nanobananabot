@@ -20,8 +20,27 @@ ASPECT_RATIO_DIMS: dict[str, tuple[int, int]] = {
     "4:5": (928, 1152),
     "16:9": (1376, 768),
     "9:16": (768, 1376),
-    "21:9": (1584, 672),
+    "21:9": (1548, 672),
     "auto": (1024, 1024),
+}
+
+# google:4@1 (Nano Banana 1) supports only these exact pixel dimensions
+_NANO_BANANA_1_DIMS: dict[str, tuple[int, int]] = {
+    "1:1": (1024, 1024),
+    "3:2": (1248, 832),
+    "2:3": (832, 1248),
+    "4:3": (1184, 864),
+    "3:4": (864, 1184),
+    "5:4": (1152, 896),
+    "4:5": (896, 1152),
+    "16:9": (1344, 768),
+    "9:16": (768, 1344),
+    "21:9": (1536, 672),
+    "auto": (1024, 1024),
+}
+
+_MODEL_DIMS: dict[str, dict[str, tuple[int, int]]] = {
+    "google:4@1": _NANO_BANANA_1_DIMS,
 }
 
 _OUTPUT_FORMAT_MAP: dict[str, str] = {
@@ -64,8 +83,9 @@ class ImageGenerationTimeoutError(ImageGenerationError):
     """Raised when image generation request times out after retries."""
 
 
-def _aspect_ratio_to_dims(aspect_ratio: str) -> tuple[int, int]:
-    return ASPECT_RATIO_DIMS.get(aspect_ratio, ASPECT_RATIO_DIMS["1:1"])
+def _aspect_ratio_to_dims(aspect_ratio: str, model_id: str | None = None) -> tuple[int, int]:
+    dims = _MODEL_DIMS.get(model_id or "", ASPECT_RATIO_DIMS) if model_id else ASPECT_RATIO_DIMS
+    return dims.get(aspect_ratio, dims["1:1"])
 
 
 def closest_aspect_ratio(width: int, height: int) -> str:
@@ -108,7 +128,7 @@ async def generate_image(
         )
 
     model_id = model or se.image_backend.model
-    width, height = _aspect_ratio_to_dims(aspect_ratio)
+    width, height = _aspect_ratio_to_dims(aspect_ratio, model_id)
     fmt = _OUTPUT_FORMAT_MAP.get(output_format.lower(), "JPG")
 
     logger.info(
