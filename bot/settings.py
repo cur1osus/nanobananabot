@@ -66,6 +66,18 @@ class ImageBackendSettings:
         )
 
 
+class SunoSettings:
+    def __init__(self) -> None:
+        self.api_key = os.environ.get("SUNO_API_KEY", "")
+        self.model = os.environ.get("SUNO_MODEL", "V5")
+        self.callback_url = os.environ.get(
+            "SUNO_CALLBACK_URL",
+            "https://example.com/callback",
+        )
+        self.poll_interval = float(os.environ.get("SUNO_POLL_INTERVAL", 5))
+        self.poll_timeout = int(os.environ.get("SUNO_POLL_TIMEOUT", 120))
+
+
 class AgentPlatformSettings:
     def __init__(self) -> None:
         self.api_key = os.environ.get("AGENT_PLATFORM_API_KEY", "")
@@ -143,6 +155,7 @@ class Settings:
     db: DBSettings = DBSettings()
     redis: RedisSettings = RedisSettings()
     image_backend: ImageBackendSettings = ImageBackendSettings()
+    suno: SunoSettings = SunoSettings()
     agent_platform: AgentPlatformSettings = AgentPlatformSettings()
     vsegpt: VseGptSettings = VseGptSettings()
     withdraw: WithdrawSettings = WithdrawSettings()
@@ -156,6 +169,7 @@ class Settings:
             username=self.db.username,
             password=self.db.password,
             host=self.db.host,
+            port=int(self.db.port),
         )
 
     def mysql_dsn_string(self) -> str:
@@ -165,6 +179,7 @@ class Settings:
             username=self.db.username,
             password=self.db.password,
             host=self.db.host,
+            port=int(self.db.port),
         ).render_as_string(hide_password=False)
 
     async def redis_dsn(self) -> Redis:
