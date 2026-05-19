@@ -23,6 +23,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot import handlers
+from bot.background_tasks import schedule_music_polling
 from bot.db.base import close_db, create_db_session_pool, init_db
 from bot.middlewares.metrics import MetricsMiddleware
 from bot.middlewares.throw_session import ThrowDBSessionMiddleware
@@ -72,6 +73,14 @@ async def start_scheduler(
     redis: Redis,
     bot: Bot,
 ) -> None:
+    if se.suno.api_key:
+        schedule_music_polling(
+            bot=bot,
+            sessionmaker=sessionmaker,
+            redis=redis,
+        )
+    else:
+        logger.info("Music polling skipped: SUNO_API_KEY is not configured")
     while True:
         await scheduler.run_pending()
         await asyncio.sleep(1)
@@ -121,6 +130,7 @@ async def set_default_commands(bot: Bot, max_retries: int = 3) -> None:
                     BotCommand(command="gen", description="Редактировать фото"),
                     BotCommand(command="create", description="Генерация изображения"),
                     BotCommand(command="create_video", description="Генерация видео"),
+                    BotCommand(command="music", description="Создать музыку"),
                     BotCommand(command="model", description="Выбор модели"),
                     BotCommand(command="buy", description="Пополнить баланс"),
                     BotCommand(command="example", description="Примеры промптов"),
@@ -177,6 +187,10 @@ def _short_description_text() -> str:
 async def main() -> None:
     if not se.image_backend.api_key:
         logger.warning("IMAGE_BACKEND_API_KEY не задан. Бот запущен без внешнего API.")
+    if not se.suno.api_key:
+        logger.warning(
+            "SUNO_API_KEY не задан. Раздел музыки не сможет запустить генерацию."
+        )
 
     api = PRODUCTION
 

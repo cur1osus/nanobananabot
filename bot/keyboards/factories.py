@@ -25,6 +25,31 @@ class ImageNav(CallbackData, prefix="image_nav"):
     action: str
 
 
+class MusicBack(CallbackData, prefix="music_back"):
+    target: str
+
+
+class MusicStyle(CallbackData, prefix="music_style"):
+    style: str
+
+
+class MusicTextAction(CallbackData, prefix="music_text"):
+    action: str
+
+
+class MusicTopic(CallbackData, prefix="music_topic"):
+    topic: str
+
+
+class MyTrackAction(CallbackData, prefix="my_track"):
+    action: str
+    track_id: int
+
+
+class MyTracksPage(CallbackData, prefix="my_tracks"):
+    page: int
+
+
 class TopupMethod(CallbackData, prefix="topup_method"):
     method: str
 

@@ -20,7 +20,7 @@ from bot.keyboards.factories import (
 )
 from bot.utils.image_models import IMAGE_MODELS, DEFAULT_IMAGE_MODEL_KEY
 from bot.utils.texts import get_topup_method, get_topup_tariffs
-from bot.utils.video_models import KLING_MODELS, VIDEO_RATIO_MAP, VIDEO_RATIOS, get_kling_model
+from bot.utils.video_models import KLING_MODELS, VIDEO_RATIO_MAP, get_kling_model
 
 LIMIT_BUTTONS: Final[int] = 100
 BACK_BUTTON_TEXT = "🔙 Назад"
@@ -165,6 +165,14 @@ async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:
         callback_data=MenuAction(action="video").pack(),
     )
     builder.button(
+        text="🎼 Создать музыку",
+        callback_data=MenuAction(action="music").pack(),
+    )
+    builder.button(
+        text="🎧 Мои треки",
+        callback_data=MenuAction(action="tracks").pack(),
+    )
+    builder.button(
         text="ℹ️ Как это работает?",
         callback_data=MenuAction(action="how").pack(),
     )
@@ -194,6 +202,10 @@ async def ik_how_menu() -> InlineKeyboardMarkup:
     builder.button(
         text="✨ Генерация изображения",
         callback_data=MenuAction(action="image").pack(),
+    )
+    builder.button(
+        text="🎼 Создать музыку",
+        callback_data=MenuAction(action="music").pack(),
     )
     builder.button(
         text="💳 Пополнить баланс",
@@ -316,7 +328,12 @@ async def ik_withdraw_cancel(transaction_id: int) -> InlineKeyboardMarkup:
 
 async def ik_info_periods(selected: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    periods = [("day", "День"), ("week", "Неделя"), ("month", "Месяц"), ("all", "Всё время")]
+    periods = [
+        ("day", "День"),
+        ("week", "Неделя"),
+        ("month", "Месяц"),
+        ("all", "Всё время"),
+    ]
     for key, label in periods:
         prefix = "✅ " if key == selected else ""
         builder.button(
@@ -357,7 +374,9 @@ async def ik_video_settings(
 
     # Промпт + Изображение
     builder.button(text="📝 Промпт", callback_data=VideoNav(action="set_prompt").pack())
-    builder.button(text="🖼 Изображение", callback_data=VideoNav(action="set_image").pack())
+    builder.button(
+        text="🖼 Изображение", callback_data=VideoNav(action="set_image").pack()
+    )
     row_sizes.append(2)
 
     # Звук — только если модель поддерживает
@@ -365,7 +384,9 @@ async def ik_video_settings(
         audio_label = "✅ Со звуком" if with_audio else "Без звука"
         builder.button(
             text=audio_label,
-            callback_data=VideoSetting(setting="audio", value="0" if with_audio else "1").pack(),
+            callback_data=VideoSetting(
+                setting="audio", value="0" if with_audio else "1"
+            ).pack(),
         )
         row_sizes.append(1)
 
@@ -400,7 +421,9 @@ async def ik_video_settings(
 
     # Назад + Генерация
     builder.button(text="← Назад", callback_data=MenuAction(action="home").pack())
-    builder.button(text="🎬 Начать генерацию", callback_data=VideoNav(action="generate").pack())
+    builder.button(
+        text="🎬 Начать генерацию", callback_data=VideoNav(action="generate").pack()
+    )
     row_sizes.append(2)
 
     builder.adjust(*row_sizes)

@@ -1456,6 +1456,21 @@ wheels = [
 ]
 
 [[package]]
+name = "runware"
+version = "0.5.11"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiofiles" },
+    { name = "httpx" },
+    { name = "python-dotenv" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/70/3d/29c7eec0dd594971cf58ba01edf03f58a5b1fee4e6320a09891406acfa52/runware-0.5.11.tar.gz", hash = "sha256:d6ceddde3cee03d0effe47ae16577b65b332e8648fa2a2320167b3a69e08df6f", size = 89063, upload-time = "2026-05-11T09:43:49.561Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/77/d2/a2dda1c7b08be565f6395a23b81a0ea88f3b330c4f77e8bc6c222be5e3c5/runware-0.5.11-py3-none-any.whl", hash = "sha256:5e45f26568959ab8cbc1f309459fd8622b2d8b87cfec084b22964db494710e91", size = 67649, upload-time = "2026-05-11T09:43:47.858Z" },
+]
+
+[[package]]
 name = "shellingham"
 version = "1.5.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1584,6 +1599,7 @@ dependencies = [
     { name = "redis" },
     { name = "requests" },
     { name = "rich" },
+    { name = "runware" },
     { name = "shellingham" },
     { name = "sqlalchemy" },
     { name = "starlette" },
@@ -1652,6 +1668,7 @@ requires-dist = [
     { name = "redis", specifier = "==7.1.0" },
     { name = "requests", specifier = "==2.32.5" },
     { name = "rich", specifier = "==13.9.4" },
+    { name = "runware", specifier = ">=0.4.0" },
     { name = "shellingham", specifier = "==1.5.4" },
     { name = "sqlalchemy", specifier = "==2.0.45" },
     { name = "starlette", specifier = "==0.37.2" },

@@ -21,11 +21,13 @@ from bot.keyboards.inline import (
     ik_topup_methods,
     ik_video_settings,
 )
+from bot.keyboards.music import ik_music_text_menu
 from bot.states import ImageGenerationState, VideoGenerationState
 from bot.utils.image_models import DEFAULT_IMAGE_MODEL_KEY
 from bot.utils.image_state import get_image_data, update_image_data
 from bot.utils.texts import (
     CONTACTS_TEXT,
+    LYRICS_MENU_TEXT,
     PROMPT_EXAMPLES_TEXT,
     TOPUP_METHODS_TEXT,
     earn_text,
@@ -109,6 +111,15 @@ async def cmd_create_video(message: Message, state: FSMContext) -> None:
             aspect_ratio=data.aspect_ratio,
             with_audio=data.with_audio,
         ),
+    )
+
+
+@router.message(Command("music"))
+async def cmd_music(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer(
+        LYRICS_MENU_TEXT,
+        reply_markup=await ik_music_text_menu(),
     )
 
 

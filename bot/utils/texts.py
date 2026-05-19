@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 
 from bot.db.redis.user_model import UserRD
 from bot.settings import se
@@ -12,14 +13,10 @@ MAIN_MENU_TEXT = (
 )
 
 BOT_INFO_TEXT = (
-    "Bum Ai Bot 🤖 — редактирование и генерация изображений.\n\n"
-    "Поддержка: @Webskill"
+    "Bum Ai Bot 🤖 — изображения, видео и музыка.\n\nПоддержка: @Webskill"
 )
 
-CONTACTS_TEXT = (
-    "📞 Контакты\n\n"
-    "Служба поддержки: @Webskill"
-)
+CONTACTS_TEXT = "📞 Контакты\n\nСлужба поддержки: @Webskill"
 
 
 BOT_DESCRIPTION_TEXT = (
@@ -27,10 +24,12 @@ BOT_DESCRIPTION_TEXT = (
     "Что умеет бот:\n"
     "• 🖌 Редактирование фото (1–8 фото в зависимости от модели)\n"
     "• ✨ Генерация изображений по текстовому описанию\n"
+    "• 🎬 Генерация видео\n"
+    "• 🎼 Генерация музыки и текстов песен\n"
     "• 🎙 Поддержка голосового ввода промпта\n\n"
     "Как начать:\n"
     "1) Нажмите /start\n"
-    "2) Выберите «Редактирование фото» или «Генерация изображения»\n"
+    "2) Выберите нужный раздел в главном меню\n"
     "3) Следуйте подсказкам бота\n\n"
     "Поддержка: @Webskill"
 )
@@ -67,6 +66,172 @@ CREATE_PROMPT_TEXT = (
     "Отлично. Теперь опишите, что сгенерировать.\n"
     "Например: «Красный спорткар на ночной улице в дождь, неон, кинокадр»."
 )
+
+MY_TRACKS_MENU_TEXT = (
+    "🎧 Ниже все треки, которые были созданы тобой.\n"
+    "Нажми на название трека, чтобы получить подробную информацию о нём."
+)
+MY_TRACKS_EMPTY_TEXT = "Пока нет ни одного трека. Создай музыку в главном меню."
+
+LYRICS_MENU_TEXT = (
+    "Начнем с создания текста для песни 🎶\n\n"
+    "Ты можешь:\n"
+    "1️⃣ Выбрать готовый повод\n"
+    "2️⃣ Сгенерировать текст песни по описанию с помощью AI\n"
+    "3️⃣ 📝 Отправить готовый текст вручную\n"
+    "4️⃣ Создать инструментал без слов"
+)
+
+
+def music_topic_style_text(topic_key: str) -> str:
+    from bot.utils.music_topics import get_music_topic_type_line
+
+    topic_line = get_music_topic_type_line(topic_key) or ""
+    return (
+        f"{topic_line}\n"
+        "В каком жанре делаем песню?\n"
+        "Можешь выбрать из списка или написать свой вариант."
+    )
+
+
+def music_topic_custom_style_text(topic_key: str) -> str:
+    from bot.utils.music_topics import get_music_topic_type_line
+
+    topic_line = get_music_topic_type_line(topic_key) or ""
+    return (
+        f"{topic_line}\n"
+        "Опиши, каким должен быть трек 🎧\n"
+        "• на кого похож стиль\n"
+        "• быстрый или медленный темп\n"
+        "• какие инструменты\n\n"
+        "Можно написать текстом или отправить голосом."
+    )
+
+
+def music_topic_text_menu_text(topic_key: str, style: str) -> str:
+    from bot.utils.music_topics import get_music_topic_style_line
+
+    style_line = get_music_topic_style_line(topic_key) or ""
+    genre_line = f"Жанр: 🎶 {style} (или любой, который тебе нравится)"
+    return (
+        f"{style_line}\n"
+        f"{genre_line}\n\n"
+        "Есть повод и стиль — пора сделать песню по-настоящему твоей.\n\n"
+        "Выбирай: создать текст с помощью ИИ или использовать уже готовый вариант."
+    )
+
+
+def music_instrumental_style_text() -> str:
+    return (
+        "Тип песни: 🎹 Инструментал\n"
+        "Теперь выбери жанр или введи свой вариант сообщением."
+    )
+
+
+def music_ai_prompt_text() -> str:
+    return (
+        "💬 Поделись идеями для песни:\n"
+        "— Про кого или о чём этот трек\n"
+        "— Какие эмоции он должен вызывать\n"
+        "— Есть ли фразы, события или образы, которые важно упомянуть\n"
+        "— Какое настроение хочется передать\n\n"
+        "Можно написать текстом или рассказать голосом."
+    )
+
+
+def music_manual_prompt_text() -> str:
+    return (
+        "✍️ Отправьте текст вашей песни в чат.\n"
+        "⚠️ Важно: не присылайте тексты известных песен — они могут не пройти "
+        "проверку сервиса на авторские права.\n\n"
+        "Пример текста песни:\n"
+        "Куплет 1\n"
+        "Строчки куплета\n"
+        "Строчки куплета\n\n"
+        "Припев\n"
+        "Строчки припева\n\n"
+        "Куплет 2\n"
+        "Строчки второго куплета"
+    )
+
+
+def music_ai_result_text(style: str, lyrics: str) -> str:
+    style_label = (style or "выбранном стиле").lower()
+    return (
+        "Готов первый вариант текста "
+        f"в стиле {style_label}. Посмотри, как тебе — можно изменить текст "
+        "через ИИ или сразу сгенерировать песню.\n\n"
+        f"Текст песни:\n{lyrics}"
+    )
+
+
+MUSIC_AI_EDIT_TEXT = (
+    "Напиши, что именно нужно изменить. Я учту пожелания и пришлю обновленный текст."
+)
+MUSIC_STYLE_TEXT = "Выбери стиль или введи свой сообщением:"
+MUSIC_TITLE_TEXT = (
+    "🎵 Добавь название трека.\n"
+    "После этого начнётся генерация песни.\n\n"
+    "🔄 Ты получишь сразу 2 версии трека\n"
+    "💳 Стоимость: 2 кредита"
+)
+MUSIC_PROMPT_TEXT = "Опиши промпт для генерации:"
+MUSIC_PROMPT_INSTRUMENTAL_TEXT = (
+    "📝 Опиши промпт для инструментала.\n"
+    "Расскажи, каким он должен быть: настроение, стиль, темп, инструменты.\n\n"
+    "Можно текстом или голосом."
+)
+MUSIC_STYLE_CUSTOM_TEXT = "Введи стиль сообщением (например, Jazz, Pop, Rock)."
+MUSIC_INSTRUMENTAL_STYLE_CUSTOM_TEXT = "Введи жанр сообщением (например, Pop, Rock)."
+MUSIC_NO_CREDITS_TEXT = (
+    "😕 Недостаточно кредитов для генерации музыки.\n"
+    "Для этого нужно 2 кредита.\n\n"
+    "Пожалуйста, пополните баланс и попробуйте снова."
+)
+
+
+def music_generation_started_text(task_id: str, title: str) -> str:
+    return (
+        "✅ Отлично, приступаю!\n"
+        f"🆔 Задача: {task_id}\n"
+        f"🎵 Название трека: {title}\n"
+        "⏳ Примерное время генерации: 5 минут\n"
+        "Я пришлю файл в чат, когда трек будет готов.\n\n"
+        "Все созданные песни доступны в разделе «🎧 Мои треки»."
+    )
+
+
+def music_instrumental_title_text(style: str) -> str:
+    style_label = style.strip()
+    if style_label:
+        genre_line = f"Жанр песни: 🎶 {style_label}"
+    else:
+        genre_line = "Жанр песни: 🎶 то, что ввел пользователь"
+    return f"Тип песни: 🎹 Инструментал\n{genre_line}\n\n{MUSIC_TITLE_TEXT}"
+
+
+def my_tracks_details_text(
+    *,
+    title: str,
+    created_at: datetime | None,
+    status_label: str | None = None,
+    song_type: str | None = None,
+    genre: str | None = None,
+) -> str:
+    lines = [f"🎵 Название: {title}"]
+    if created_at:
+        lines.append(f"📅 Дата создания: {created_at:%d.%m.%Y %H:%M}")
+    if status_label:
+        lines.append(f"⚙️ Статус: {status_label}")
+    if song_type:
+        lines.append(f"🎯 Тип песни: {song_type}")
+    if genre:
+        lines.append(f"🎶 Жанр песни: {genre}")
+    return "\n".join(lines)
+
+
+def my_tracks_lyrics_text(*, title: str, lyrics: str) -> str:
+    return f"Текст песни «{title}»:\n\n{lyrics}"
 
 
 def nanobanana_welcome_text() -> str:
@@ -241,11 +406,14 @@ def main_menu_text(user: UserRD) -> str:
 def how_text(bot_name: str) -> str:
     return (
         f"🖼 Как работает бот {bot_name}\n\n"
-        f"{bot_name} — самый простой способ редактировать и объединять фото.\n\n"
+        f"{bot_name} — самый простой способ редактировать фото, создавать "
+        "изображения, видео и музыку.\n\n"
         "1️⃣ Выбираешь модель для генерации.\n"
         "2️⃣ Присылаешь 1-4 фотографии.\n"
         "3️⃣ Описываешь, что нужно изменить.\n"
-        "4️⃣ Получаешь готовое изображение.\n\n"
+        "4️⃣ Получаешь готовое изображение.\n"
+        "5️⃣ В разделе «Создать музыку» можно сделать текст песни через ИИ, "
+        "отправить готовый текст или создать инструментал.\n\n"
         "💳 Если генерации закончатся, ты всегда можешь пополнить баланс в "
         "главном меню."
     )
