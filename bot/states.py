@@ -29,5 +29,15 @@ class VideoGenerationState(StatesGroup):
     waiting_image = State()
 
 
+class MusicGenerationState(StatesGroup):
+    prompt = State()
+    title = State()
+    style = State()
+    waiting = State()
+    topic_style = State()
+    topic_text_menu = State()
+    ai_result = State()
+
+
 class SpeechTestState(StatesGroup):
     waiting = State()
