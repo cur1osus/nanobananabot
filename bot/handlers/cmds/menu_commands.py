@@ -3,7 +3,7 @@ from __future__ import annotations
 from urllib.parse import quote
 
 from aiogram import Router
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from aiogram.utils.deep_linking import create_start_link
@@ -21,13 +21,15 @@ from bot.keyboards.inline import (
     ik_topup_methods,
     ik_video_settings,
 )
-from bot.keyboards.music import ik_music_text_menu
-from bot.states import ImageGenerationState, VideoGenerationState
+from bot.keyboards.music import ik_music_styles, ik_music_text_menu
+from bot.states import ImageGenerationState, MusicGenerationState, VideoGenerationState
+from bot.utils.music_state import update_music_data
 from bot.utils.image_models import DEFAULT_IMAGE_MODEL_KEY
 from bot.utils.image_state import get_image_data, update_image_data
 from bot.utils.texts import (
     CONTACTS_TEXT,
     LYRICS_MENU_TEXT,
+    MUSIC_STYLE_TEXT,
     PROMPT_EXAMPLES_TEXT,
     TOPUP_METHODS_TEXT,
     earn_text,
@@ -115,8 +117,17 @@ async def cmd_create_video(message: Message, state: FSMContext) -> None:
 
 
 @router.message(Command("music"))
-async def cmd_music(message: Message, state: FSMContext) -> None:
+async def cmd_music(message: Message, state: FSMContext, command: CommandObject) -> None:
     await state.clear()
+    prompt = (command.args or "").strip()
+    if prompt:
+        await update_music_data(state, prompt=prompt, prompt_source="manual", custom_mode=True)
+        await state.set_state(MusicGenerationState.style)
+        await message.answer(
+            MUSIC_STYLE_TEXT,
+            reply_markup=await ik_music_styles(),
+        )
+        return
     await message.answer(
         LYRICS_MENU_TEXT,
         reply_markup=await ik_music_text_menu(),
