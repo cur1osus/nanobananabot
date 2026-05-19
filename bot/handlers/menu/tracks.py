@@ -398,6 +398,7 @@ def _pick_lyrics(payload: dict[str, Any], tracks: list[dict[str, Any]]) -> str |
             or track.get("lyric")
             or track.get("text")
             or track.get("content")
+            or track.get("prompt")  # Suno API returns lyrics in "prompt" field
         )
         if value:
             return str(value).strip()
