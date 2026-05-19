@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 from aiogram import F, Router
@@ -13,10 +13,13 @@ from aiogram.types import BufferedInputFile, CallbackQuery
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db.enum import MusicTaskStatus
-from bot.db.models import MusicTaskModel
+from bot.background_tasks import MIN_POLL_TIMEOUT
+from bot.db.enum import MusicTaskStatus, UserRole
+from bot.db.func import charge_user_credits, refund_user_credits
+from bot.db.models import MusicTaskModel, UserModel
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import MenuAction, MyTrackAction, MyTracksPage
+from bot.keyboards.inline import ik_main
 from bot.keyboards.music import ik_my_track_detail, ik_my_tracks_list
 from bot.utils.background_task_helpers import _build_filename, _download_audio
 from bot.utils.messaging import edit_or_answer
@@ -25,9 +28,14 @@ from bot.utils.suno_api import SunoAPIError, build_suno_client
 from bot.utils.texts import (
     MY_TRACKS_EMPTY_TEXT,
     MY_TRACKS_MENU_TEXT,
+    music_generation_started_text,
     my_tracks_details_text,
     my_tracks_lyrics_text,
 )
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -102,11 +110,15 @@ async def track_detail(
             song_type=song_type,
             genre=genre,
         )
+        can_retry = task.status in (
+            MusicTaskStatus.TIMEOUT.value,
+            MusicTaskStatus.ERROR.value,
+        ) and bool(task.prompt)
         await edit_or_answer(
             query,
             text=text,
             reply_markup=await ik_my_track_detail(
-                task.id, show_lyrics=False, show_audio=False
+                task.id, show_lyrics=False, show_audio=False, show_retry=can_retry
             ),
         )
         return
@@ -413,6 +425,83 @@ def _song_type_from_task(task: MusicTaskModel) -> str | None:
 def _genre_from_task(task: MusicTaskModel) -> str | None:
     style = (task.style or "").strip()
     return style or None
+
+
+@router.callback_query(MyTrackAction.filter(F.action == "retry"))
+async def track_retry(
+    query: CallbackQuery,
+    callback_data: MyTrackAction,
+    user: UserRD,
+    session: AsyncSession,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    redis: Redis,
+) -> None:
+    task = await _get_user_task(session, user.id, callback_data.track_id)
+    if not task:
+        await query.answer("Трек не найден.", show_alert=True)
+        return
+    if not task.prompt:
+        await query.answer("Нет данных для повтора генерации.", show_alert=True)
+        return
+
+    await query.answer()
+
+    credits_cost = task.credits_cost
+    if not await charge_user_credits(session=session, redis=redis, user=user, amount=credits_cost):
+        await query.answer(f"Недостаточно кредитов. Нужно {credits_cost}.", show_alert=True)
+        return
+
+    try:
+        client = build_suno_client()
+        new_task_id = await client.generate_music(
+            prompt=task.prompt,
+            custom_mode=bool(task.custom_mode),
+            instrumental=bool(task.instrumental),
+            style=task.style or "",
+            title=task.filename_base or "",
+        )
+    except SunoAPIError as err:
+        logger.warning("Retry генерации не удался task_id=%s: %s", task.task_id, err)
+        await refund_user_credits(session=session, redis=redis, user=user, amount=credits_cost)
+        await query.message.answer("Не удалось запустить генерацию. Попробуйте позже.")
+        return
+
+    user_db = await session.scalar(select(UserModel).where(UserModel.user_id == user.user_id))
+    if not user_db:
+        await refund_user_credits(session=session, redis=redis, user=user, amount=credits_cost)
+        await query.message.answer("Ошибка при создании задачи. Попробуйте позже.")
+        return
+
+    new_task = MusicTaskModel(
+        user_idpk=user_db.id,
+        task_id=new_task_id,
+        chat_id=task.chat_id,
+        filename_base=task.filename_base,
+        status=MusicTaskStatus.PENDING.value,
+        errors=0,
+        credits_cost=credits_cost,
+        poll_timeout=max(client.poll_timeout, MIN_POLL_TIMEOUT),
+        topic_key=task.topic_key,
+        style=task.style,
+        prompt_source=task.prompt_source,
+        prompt=task.prompt,
+        custom_mode=bool(task.custom_mode),
+        instrumental=bool(task.instrumental),
+    )
+    try:
+        session.add(new_task)
+        await session.commit()
+    except Exception as err:
+        await session.rollback()
+        logger.warning("Не удалось сохранить retry-задачу %s: %s", new_task_id, err)
+        await refund_user_credits(session=session, redis=redis, user=user, amount=credits_cost)
+        await query.message.answer("Ошибка при сохранении задачи. Попробуйте позже.")
+        return
+
+    await query.message.answer(
+        music_generation_started_text(new_task_id, task.filename_base or "Трек"),
+        reply_markup=await ik_main(is_admin=user.role == UserRole.ADMIN.value),
+    )
 
 
 async def _send_track_audio(

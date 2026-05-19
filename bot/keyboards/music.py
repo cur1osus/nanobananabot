@@ -83,6 +83,7 @@ async def ik_my_track_detail(
     *,
     show_lyrics: bool = True,
     show_audio: bool = True,
+    show_retry: bool = False,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if show_audio:
@@ -94,6 +95,11 @@ async def ik_my_track_detail(
         builder.button(
             text="📝 Показать текст песни",
             callback_data=MyTrackAction(action="lyrics", track_id=track_id).pack(),
+        )
+    if show_retry:
+        builder.button(
+            text="🔄 Повторить генерацию",
+            callback_data=MyTrackAction(action="retry", track_id=track_id).pack(),
         )
     builder.button(
         text=BACK_BUTTON_TEXT,
