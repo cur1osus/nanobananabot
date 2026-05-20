@@ -52,6 +52,7 @@ _MODEL_DIMS: dict[str, dict[str, tuple[int, int]]] = {
 _INPUT_REFERENCE_IMAGE_MODELS: set[str] = {
     "alibaba:wan@2.7-image",
     "bfl:7@1",
+    "openai:gpt-image@2",
     "runware:400@1",
     "runware:400@2",
 }

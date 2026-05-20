@@ -50,6 +50,7 @@ async def test_generate_image_respects_total_timeout(monkeypatch) -> None:
     [
         "alibaba:wan@2.7-image",
         "bfl:7@1",
+        "openai:gpt-image@2",
         "runware:400@1",
         "runware:400@2",
     ],
