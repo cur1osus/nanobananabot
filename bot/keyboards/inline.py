@@ -9,6 +9,7 @@ from bot.keyboards.factories import (
     ImageResultAction,
     InfoPeriod,
     MenuAction,
+    ModelGroupSwitch,
     ModelMenu,
     ModelSelect,
     TopupMethod,
@@ -18,7 +19,7 @@ from bot.keyboards.factories import (
     VideoSetting,
     WithdrawAction,
 )
-from bot.utils.image_models import IMAGE_MODELS, DEFAULT_IMAGE_MODEL_KEY
+from bot.utils.image_models import ALL_IMAGE_MODELS, DEFAULT_IMAGE_MODEL_KEY, IMAGE_MODELS, OTHER_IMAGE_MODELS
 from bot.utils.texts import get_topup_method, get_topup_tariffs
 from bot.utils.video_models import KLING_MODELS, VIDEO_RATIO_MAP, get_kling_model
 
@@ -27,7 +28,7 @@ BACK_BUTTON_TEXT = "🔙 Назад"
 
 
 def _model_button_label(model_key: str, selected_key: str) -> str:
-    for option in IMAGE_MODELS:
+    for option in ALL_IMAGE_MODELS:
         if option.key == model_key:
             label = option.button_label
             break
@@ -55,11 +56,42 @@ async def ik_image_model_select(
             callback_data=ModelSelect(model=option.key).pack(),
         )
     builder.button(
+        text="🌐 Другие модели ▸",
+        callback_data=ModelGroupSwitch(group="other").pack(),
+    )
+    builder.button(
         text="🏠 В главное меню",
         callback_data=MenuAction(action="home").pack(),
     )
     builder.adjust(1)
     return builder.as_markup()
+
+
+async def ik_other_image_model_select(
+    selected_key: str = DEFAULT_IMAGE_MODEL_KEY,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for option in OTHER_IMAGE_MODELS:
+        builder.button(
+            text=_model_button_label(option.key, selected_key),
+            callback_data=ModelSelect(model=option.key).pack(),
+        )
+    builder.button(
+        text="🍌 Nano Banana ◂",
+        callback_data=ModelGroupSwitch(group="nano").pack(),
+    )
+    builder.button(
+        text="🏠 В главное меню",
+        callback_data=MenuAction(action="home").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_model_select_for_key(selected_key: str = DEFAULT_IMAGE_MODEL_KEY) -> InlineKeyboardMarkup:
+    if any(opt.key == selected_key for opt in IMAGE_MODELS):
+        return await ik_image_model_select(selected_key)
+    return await ik_other_image_model_select(selected_key)
 
 
 async def ik_image_waiting_photos() -> InlineKeyboardMarkup:

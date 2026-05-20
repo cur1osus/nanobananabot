@@ -9,6 +9,10 @@ class ModelMenu(CallbackData, prefix="model_menu"):
     pass
 
 
+class ModelGroupSwitch(CallbackData, prefix="model_group"):
+    group: str
+
+
 class ModelSelect(CallbackData, prefix="model_select"):
     model: str
 

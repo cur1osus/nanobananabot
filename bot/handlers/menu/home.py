@@ -7,7 +7,7 @@ from aiogram.types import CallbackQuery
 from bot.db.enum import UserRole
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import MenuAction
-from bot.keyboards.inline import ik_image_model_select, ik_main, ik_video_settings
+from bot.keyboards.inline import ik_main, ik_model_select_for_key, ik_video_settings
 from bot.states import BaseUserState, ImageGenerationState, VideoGenerationState
 from bot.utils.image_models import DEFAULT_IMAGE_MODEL_KEY
 from bot.utils.image_state import get_image_data, update_image_data
@@ -55,7 +55,7 @@ async def menu_image(
     await edit_or_answer(
         query,
         text=model_panel_text(user, selected_key),
-        reply_markup=await ik_image_model_select(selected_key),
+        reply_markup=await ik_model_select_for_key(selected_key),
     )
 
 
@@ -100,5 +100,5 @@ async def menu_edit(
     await edit_or_answer(
         query,
         text=model_panel_text(user, selected_key),
-        reply_markup=await ik_image_model_select(selected_key),
+        reply_markup=await ik_model_select_for_key(selected_key),
     )

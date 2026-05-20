@@ -17,7 +17,7 @@ from bot.db.redis.user_model import UserRD
 from bot.keyboards.inline import (
     ik_earn_menu,
     ik_how_menu,
-    ik_image_model_select,
+    ik_model_select_for_key,
     ik_topup_methods,
     ik_video_settings,
 )
@@ -61,7 +61,7 @@ async def cmd_gen(message: Message, state: FSMContext, user: UserRD) -> None:
     )
     await message.answer(
         model_panel_text(user, selected_key),
-        reply_markup=await ik_image_model_select(selected_key),
+        reply_markup=await ik_model_select_for_key(selected_key),
     )
 
 
@@ -81,7 +81,7 @@ async def cmd_create(message: Message, state: FSMContext, user: UserRD) -> None:
     await state.set_state(ImageGenerationState.waiting_create_model)
     await message.answer(
         model_panel_text(user, selected_key),
-        reply_markup=await ik_image_model_select(selected_key),
+        reply_markup=await ik_model_select_for_key(selected_key),
     )
 
 
@@ -91,7 +91,7 @@ async def cmd_model(message: Message, state: FSMContext, user: UserRD) -> None:
     selected_key = data.model_key or DEFAULT_IMAGE_MODEL_KEY
     await message.answer(
         model_panel_text(user, selected_key),
-        reply_markup=await ik_image_model_select(selected_key),
+        reply_markup=await ik_model_select_for_key(selected_key),
     )
 
 

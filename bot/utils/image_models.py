@@ -45,18 +45,68 @@ IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
     ),
 )
 
+OTHER_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
+    ImageModelOption(
+        key="gpt_image_2",
+        title="GPT Image 2",
+        api_model="openai:gpt-image@2",
+        create_api_model="openai:gpt-image@2",
+        cost=5,
+        details="текст, логотипы, постеры, каталог",
+        button_label="GPT Image 2 (5 ген)",
+    ),
+    ImageModelOption(
+        key="flux2_max",
+        title="FLUX.2 Max",
+        api_model="bfl:7@1",
+        create_api_model="bfl:7@1",
+        cost=6,
+        details="фотореализм, fashion, luxury",
+        button_label="FLUX.2 Max (6 ген)",
+    ),
+    ImageModelOption(
+        key="flux2_dev",
+        title="FLUX.2 Dev",
+        api_model="runware:400@1",
+        create_api_model="runware:400@1",
+        cost=2,
+        details="тесты промптов, массовая генерация",
+        button_label="FLUX.2 Dev (2 ген)",
+    ),
+    ImageModelOption(
+        key="flux2_klein",
+        title="FLUX.2 Klein 9B",
+        api_model="runware:400@2",
+        create_api_model="runware:400@2",
+        cost=2,
+        details="баланс цена/качество",
+        button_label="FLUX.2 Klein 9B (2 ген)",
+    ),
+    ImageModelOption(
+        key="wan27_image",
+        title="Wan2.7 Image",
+        api_model="alibaba:wan@2.7-image",
+        create_api_model="alibaba:wan@2.7-image",
+        cost=3,
+        details="аниме, азиатский стиль",
+        button_label="Wan2.7 Image (3 ген)",
+    ),
+)
+
+ALL_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = IMAGE_MODELS + OTHER_IMAGE_MODELS
+
 DEFAULT_IMAGE_MODEL_KEY: Final[str] = "standard"
 
 
 def get_image_model(key: str) -> ImageModelOption:
-    for option in IMAGE_MODELS:
+    for option in ALL_IMAGE_MODELS:
         if option.key == key:
             return option
     return IMAGE_MODELS[0]
 
 
 def is_image_model_key(key: str) -> bool:
-    return any(option.key == key for option in IMAGE_MODELS)
+    return any(option.key == key for option in ALL_IMAGE_MODELS)
 
 
 def format_generations(count: int) -> str:

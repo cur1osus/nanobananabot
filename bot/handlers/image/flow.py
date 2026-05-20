@@ -18,6 +18,7 @@ from bot.keyboards.factories import (
     CreateAspectRatio,
     ImageNav,
     ImageResultAction,
+    ModelGroupSwitch,
     ModelMenu,
     ModelSelect,
 )
@@ -28,6 +29,8 @@ from bot.keyboards.inline import (
     ik_image_model_select,
     ik_image_result_actions,
     ik_image_waiting_photos,
+    ik_model_select_for_key,
+    ik_other_image_model_select,
     ik_prompt_nav,
 )
 from bot.states import BaseUserState, ImageGenerationState
@@ -76,6 +79,7 @@ CREATE_RATIO_MAP: dict[str, str] = {
     "2x3": "2:3",
     "9x16": "9:16",
 }
+
 
 
 def _photo_limit_for_model(model_key: str) -> int:
@@ -369,7 +373,28 @@ async def open_model_menu(
     await edit_or_answer(
         query,
         text=model_panel_text(user, selected_key),
-        reply_markup=await ik_image_model_select(selected_key),
+        reply_markup=await ik_model_select_for_key(selected_key),
+    )
+
+
+@router.callback_query(ModelGroupSwitch.filter())
+async def switch_model_group(
+    query: CallbackQuery,
+    callback_data: ModelGroupSwitch,
+    state: FSMContext,
+    user: UserRD,
+) -> None:
+    await query.answer()
+    data = await get_image_data(state)
+    selected_key = data.model_key or DEFAULT_IMAGE_MODEL_KEY
+    if callback_data.group == "other":
+        markup = await ik_other_image_model_select(selected_key)
+    else:
+        markup = await ik_image_model_select(selected_key)
+    await edit_or_answer(
+        query,
+        text=model_panel_text(user, selected_key),
+        reply_markup=markup,
     )
 
 
@@ -433,7 +458,7 @@ async def remind_create_model(
     selected_key = data.model_key or DEFAULT_IMAGE_MODEL_KEY
     await message.answer(
         model_panel_text(user, selected_key),
-        reply_markup=await ik_image_model_select(selected_key),
+        reply_markup=await ik_model_select_for_key(selected_key),
     )
 
 
