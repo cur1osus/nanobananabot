@@ -78,9 +78,9 @@ OTHER_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
         title="FLUX.2 Klein 9B",
         api_model="runware:400@2",
         create_api_model="runware:400@2",
-        cost=2,
-        details="баланс цена/качество",
-        button_label="FLUX.2 Klein 9B (2 ген)",
+        cost=1,
+        details="быстрые черновики",
+        button_label="FLUX.2 Klein 9B (1 ген)",
     ),
     ImageModelOption(
         key="wan27_image",
