@@ -20,7 +20,7 @@ ASPECT_RATIO_DIMS: dict[str, tuple[int, int]] = {
     "4:5": (928, 1152),
     "16:9": (1376, 768),
     "9:16": (768, 1376),
-    "21:9": (1548, 672),
+    "21:9": (1536, 672),
     "auto": (1024, 1024),
 }
 
@@ -41,6 +41,12 @@ _NANO_BANANA_1_DIMS: dict[str, tuple[int, int]] = {
 
 _MODEL_DIMS: dict[str, dict[str, tuple[int, int]]] = {
     "google:4@1": _NANO_BANANA_1_DIMS,
+}
+
+_INPUT_REFERENCE_IMAGE_MODELS: set[str] = {
+    "bfl:7@1",
+    "runware:400@1",
+    "runware:400@2",
 }
 
 _OUTPUT_FORMAT_MAP: dict[str, str] = {
@@ -96,6 +102,35 @@ def closest_aspect_ratio(width: int, height: int) -> str:
     return min(candidates, key=lambda k: abs(candidates[k][0] / candidates[k][1] - target))
 
 
+def _build_image_inference_request(
+    *,
+    model_id: str,
+    prompt: str,
+    width: int,
+    height: int,
+    output_format: str,
+    reference_images: list[str] | None,
+) -> IImageInference:
+    refs = reference_images or []
+    request_kwargs = {
+        "model": model_id,
+        "positivePrompt": prompt,
+        "width": width,
+        "height": height,
+        "outputType": "URL",
+        "outputFormat": output_format,
+        "numberResults": 1,
+    }
+
+    if refs:
+        if model_id in _INPUT_REFERENCE_IMAGE_MODELS:
+            request_kwargs["inputs"] = {"referenceImages": refs}
+        else:
+            request_kwargs["referenceImages"] = refs
+
+    return IImageInference(**request_kwargs)
+
+
 async def _download_image(url: str, *, timeout: int) -> bytes:
     request_timeout = aiohttp.ClientTimeout(total=timeout)
     async with aiohttp.ClientSession() as session:
@@ -139,15 +174,13 @@ async def generate_image(
         height,
     )
 
-    request = IImageInference(
-        model=model_id,
-        positivePrompt=prompt,
+    request = _build_image_inference_request(
+        model_id=model_id,
+        prompt=prompt,
         width=width,
         height=height,
-        outputType="URL",
-        outputFormat=fmt,
-        numberResults=1,
-        referenceImages=reference_images or [],
+        output_format=fmt,
+        reference_images=reference_images,
     )
 
     async with _get_runware_semaphore():
