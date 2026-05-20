@@ -39,11 +39,18 @@ _NANO_BANANA_1_DIMS: dict[str, tuple[int, int]] = {
     "auto": (1024, 1024),
 }
 
+_WAN_27_IMAGE_DIMS: dict[str, tuple[int, int]] = {
+    **ASPECT_RATIO_DIMS,
+    "21:9": (1792, 768),
+}
+
 _MODEL_DIMS: dict[str, dict[str, tuple[int, int]]] = {
     "google:4@1": _NANO_BANANA_1_DIMS,
+    "alibaba:wan@2.7-image": _WAN_27_IMAGE_DIMS,
 }
 
 _INPUT_REFERENCE_IMAGE_MODELS: set[str] = {
+    "alibaba:wan@2.7-image",
     "bfl:7@1",
     "runware:400@1",
     "runware:400@2",
