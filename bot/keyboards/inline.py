@@ -19,7 +19,12 @@ from bot.keyboards.factories import (
     VideoSetting,
     WithdrawAction,
 )
-from bot.utils.image_models import ALL_IMAGE_MODELS, DEFAULT_IMAGE_MODEL_KEY, IMAGE_MODELS, OTHER_IMAGE_MODELS
+from bot.utils.image_models import (
+    ALL_IMAGE_MODELS,
+    DEFAULT_IMAGE_MODEL_KEY,
+    IMAGE_MODELS,
+    OTHER_IMAGE_MODELS,
+)
 from bot.utils.texts import get_topup_method, get_topup_tariffs
 from bot.utils.video_models import KLING_MODELS, VIDEO_RATIO_MAP, get_kling_model
 
@@ -88,7 +93,9 @@ async def ik_other_image_model_select(
     return builder.as_markup()
 
 
-async def ik_model_select_for_key(selected_key: str = DEFAULT_IMAGE_MODEL_KEY) -> InlineKeyboardMarkup:
+async def ik_model_select_for_key(
+    selected_key: str = DEFAULT_IMAGE_MODEL_KEY,
+) -> InlineKeyboardMarkup:
     if any(opt.key == selected_key for opt in IMAGE_MODELS):
         return await ik_image_model_select(selected_key)
     return await ik_other_image_model_select(selected_key)
@@ -399,6 +406,7 @@ async def ik_video_settings(
     duration: int,
     aspect_ratio: str,
     with_audio: bool,
+    has_image: bool = False,
 ) -> InlineKeyboardMarkup:
     model = get_kling_model(model_key)
     builder = InlineKeyboardBuilder()
@@ -411,8 +419,8 @@ async def ik_video_settings(
     )
     row_sizes.append(2)
 
-    # Звук — только если модель поддерживает
-    if model.supports_sound:
+    # Runware does not allow native sound with inputs.frameImages.
+    if model.supports_sound and not has_image:
         audio_label = "✅ Со звуком" if with_audio else "Без звука"
         builder.button(
             text=audio_label,

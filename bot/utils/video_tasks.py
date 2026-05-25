@@ -2,9 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 
 import aiohttp
-from runware import IInputFrame, IKlingAIProviderSettings, IVideoInference, IVideoInputs, Runware
+from runware import (
+    IInputFrame,
+    IKlingAIProviderSettings,
+    IVideoInference,
+    IVideoInputs,
+    Runware,
+)
 
 from bot.settings import se
 from bot.utils.video_models import VIDEO_RATIO_DIMS
@@ -64,14 +71,12 @@ async def generate_video(
     supports_duration: bool = False,
     supports_dimensions: bool = False,
     supports_sound: bool = False,
-    image_input_type: str = "frameImages",
+    ratio_dims: Mapping[str, tuple[int, int]] | None = None,
     needs_provider_settings: bool = False,
 ) -> bytes:
     """Generate video via Runware SDK."""
     if not se.image_backend.api_key:
-        raise VideoGenerationError(
-            "Не настроен ключ API (IMAGE_BACKEND_API_KEY)."
-        )
+        raise VideoGenerationError("Не настроен ключ API (IMAGE_BACKEND_API_KEY).")
 
     request_kwargs: dict = {
         "model": runware_model,
@@ -83,25 +88,30 @@ async def generate_video(
     if supports_duration:
         request_kwargs["duration"] = duration
 
+    provider_settings_kwargs: dict = {}
+
     if reference_image:
-        # I2V: images go inside inputs, width/height must NOT be sent
-        if image_input_type == "referenceImages":
-            inputs = IVideoInputs(referenceImages=[reference_image])
-        else:
-            inputs = IVideoInputs(
-                frameImages=[IInputFrame(image=reference_image, frame="first")]
-            )
-        request_kwargs["inputs"] = inputs
+        # I2V: images go inside inputs, width/height must NOT be sent.
+        request_kwargs["inputs"] = IVideoInputs(
+            frameImages=[IInputFrame(image=reference_image, frame="first")]
+        )
 
         if needs_provider_settings:
-            request_kwargs["providerSettings"] = IKlingAIProviderSettings(
-                characterOrientation="image"
-            )
+            provider_settings_kwargs["characterOrientation"] = "image"
     elif supports_dimensions:
         # T2V: send explicit dimensions, mutually exclusive with inputs.frameImages
-        dims = VIDEO_RATIO_DIMS.get(aspect_ratio, (1440, 1440))
+        dimensions = ratio_dims or VIDEO_RATIO_DIMS
+        dims = dimensions.get(aspect_ratio, dimensions.get("1:1", (1440, 1440)))
         request_kwargs["width"] = dims[0]
         request_kwargs["height"] = dims[1]
+
+    if supports_sound and not reference_image:
+        provider_settings_kwargs["sound"] = with_audio
+
+    if provider_settings_kwargs:
+        request_kwargs["providerSettings"] = IKlingAIProviderSettings(
+            **provider_settings_kwargs
+        )
 
     request = IVideoInference(**request_kwargs)
 

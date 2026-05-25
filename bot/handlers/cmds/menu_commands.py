@@ -112,16 +112,21 @@ async def cmd_create_video(message: Message, state: FSMContext) -> None:
             duration=data.duration,
             aspect_ratio=data.aspect_ratio,
             with_audio=data.with_audio,
+            has_image=bool(data.image_file_id),
         ),
     )
 
 
 @router.message(Command("music"))
-async def cmd_music(message: Message, state: FSMContext, command: CommandObject) -> None:
+async def cmd_music(
+    message: Message, state: FSMContext, command: CommandObject
+) -> None:
     await state.clear()
     prompt = (command.args or "").strip()
     if prompt:
-        await update_music_data(state, prompt=prompt, prompt_source="manual", custom_mode=True)
+        await update_music_data(
+            state, prompt=prompt, prompt_source="manual", custom_mode=True
+        )
         await state.set_state(MusicGenerationState.style)
         await message.answer(
             MUSIC_STYLE_TEXT,

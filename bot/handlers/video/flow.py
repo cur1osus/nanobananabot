@@ -48,6 +48,7 @@ async def _open_settings(
             duration=data.duration,
             aspect_ratio=data.aspect_ratio,
             with_audio=data.with_audio,
+            has_image=bool(data.image_file_id),
         ),
     )
 
@@ -63,6 +64,7 @@ async def handle_video_setting(
 
     if callback_data.setting == "model":
         from bot.utils.video_models import is_kling_model_key
+
         if is_kling_model_key(callback_data.value):
             data.model_key = callback_data.value
 
@@ -78,6 +80,7 @@ async def handle_video_setting(
         data.with_audio = callback_data.value == "1"
 
     from bot.utils.video_state import set_video_data
+
     await set_video_data(state, data)
     await state.set_state(VideoGenerationState.settings)
 
@@ -89,6 +92,7 @@ async def handle_video_setting(
             duration=data.duration,
             aspect_ratio=data.aspect_ratio,
             with_audio=data.with_audio,
+            has_image=bool(data.image_file_id),
         ),
     )
 
@@ -112,6 +116,7 @@ async def handle_video_ratio(
                 duration=data.duration,
                 aspect_ratio=data.aspect_ratio,
                 with_audio=data.with_audio,
+                has_image=bool(data.image_file_id),
             ),
         )
 
@@ -149,6 +154,7 @@ async def collect_video_prompt(
             duration=data.duration,
             aspect_ratio=data.aspect_ratio,
             with_audio=data.with_audio,
+            has_image=bool(data.image_file_id),
         ),
     )
 
@@ -168,7 +174,11 @@ async def ask_video_image(
 
 
 @router.message(VideoGenerationState.waiting_image, F.photo)
-@router.message(VideoGenerationState.waiting_image, F.document, F.document.mime_type.startswith("image/"))
+@router.message(
+    VideoGenerationState.waiting_image,
+    F.document,
+    F.document.mime_type.startswith("image/"),
+)
 async def collect_video_image(
     message: Message,
     state: FSMContext,
@@ -189,6 +199,7 @@ async def collect_video_image(
             duration=data.duration,
             aspect_ratio=data.aspect_ratio,
             with_audio=data.with_audio,
+            has_image=bool(data.image_file_id),
         ),
     )
 
@@ -251,10 +262,9 @@ async def start_video_generation(
                 async with aiohttp.ClientSession(timeout=timeout) as http_session:
                     async with http_session.get(url) as response:
                         img_bytes = await response.read()
-                reference_image = (
-                    "data:image/jpeg;base64,"
-                    + base64.b64encode(img_bytes).decode("ascii")
-                )
+                reference_image = "data:image/jpeg;base64," + base64.b64encode(
+                    img_bytes
+                ).decode("ascii")
         except Exception:
             logger.exception("Failed to prepare reference image for video")
 
@@ -269,7 +279,7 @@ async def start_video_generation(
             supports_duration=model.supports_duration,
             supports_dimensions=model.supports_dimensions,
             supports_sound=model.supports_sound,
-            image_input_type=model.image_input_type,
+            ratio_dims=model.ratio_dims,
             needs_provider_settings=model.needs_provider_settings,
         )
         await deduct_user_credits(

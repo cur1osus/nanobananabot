@@ -75,6 +75,7 @@ async def menu_video(
             duration=data.duration,
             aspect_ratio=data.aspect_ratio,
             with_audio=data.with_audio,
+            has_image=bool(data.image_file_id),
         ),
     )
 

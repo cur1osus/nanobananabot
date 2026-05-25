@@ -82,6 +82,8 @@ def video_settings_text(data: VideoFlowData) -> str:
         limitations.append("формат фиксирован")
     if not model.supports_sound:
         limitations.append("звук недоступен")
+    elif data.image_file_id:
+        limitations.append("звук недоступен при генерации из изображения")
 
     lines = [
         "🎬 <b>Настройки видео (Kling)</b>\n",
