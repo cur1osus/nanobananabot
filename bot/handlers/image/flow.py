@@ -53,6 +53,8 @@ from bot.utils.speech_recognition import (
     transcribe_message_audio,
 )
 from bot.utils.texts import (
+    ADULT_CREATE_PROMPT_TEXT,
+    ADULT_PROMPT_REQUEST_TEXT,
     CREATE_ASPECT_RATIO_TEXT,
     CREATE_PROMPT_TEXT,
     PROMPT_REQUEST_TEXT,
@@ -171,9 +173,11 @@ async def _send_generation_result(
         document=BufferedInputFile(file=image_bytes, filename=filename),
         caption="📎 Файл результата",
     )
+    # В 18+ название модели не показываем.
+    model_line = "" if is_adult_model_key(model_key) else f"🎨 Модель: {model_title}\n"
     await message.answer_photo(
         photo=BufferedInputFile(file=image_bytes, filename="preview.jpg"),
-        caption=f"✅ Готово!\n🎨 Модель: {model_title}\n💰 Списано: {model_cost} кредитов",
+        caption=f"✅ Готово!\n{model_line}💰 Списано: {model_cost} кредитов",
         reply_markup=(
             await ik_image_result_actions()
             if show_result_actions
@@ -623,8 +627,13 @@ async def collect_photos(
     prompt_requested = data.prompt_requested
     if not prompt_requested:
         prompt_requested = True
+        prompt_text = (
+            ADULT_PROMPT_REQUEST_TEXT
+            if is_adult_model_key(data.model_key)
+            else PROMPT_REQUEST_TEXT
+        )
         await message.answer(
-            PROMPT_REQUEST_TEXT,
+            prompt_text,
             reply_markup=await ik_prompt_nav(),
         )
         await state.set_state(ImageGenerationState.waiting_prompt)
@@ -729,7 +738,7 @@ async def select_create_aspect_ratio(
         await query.answer("Неизвестное соотношение", show_alert=True)
         return
 
-    await update_image_data(
+    data = await update_image_data(
         state,
         photos=[],
         prompt="",
@@ -738,8 +747,13 @@ async def select_create_aspect_ratio(
     )
     await state.set_state(ImageGenerationState.waiting_create_prompt)
     await query.answer()
+    prompt_text = (
+        ADULT_CREATE_PROMPT_TEXT
+        if is_adult_model_key(data.model_key)
+        else CREATE_PROMPT_TEXT
+    )
     await edit_or_answer(
-        query, text=CREATE_PROMPT_TEXT, reply_markup=await ik_create_prompt_nav()
+        query, text=prompt_text, reply_markup=await ik_create_prompt_nav()
     )
 
 

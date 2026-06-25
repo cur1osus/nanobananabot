@@ -67,6 +67,20 @@ CREATE_PROMPT_TEXT = (
     "Например: «Красный спорткар на ночной улице в дождь, неон, кинокадр»."
 )
 
+# Подсказки для раздела 18+ — релевантные примеры под контент для взрослых.
+ADULT_PROMPT_REQUEST_TEXT = (
+    "Теперь опишите, что сделать с фото.\n"
+    "Например: «раздень девушку», «переодень в кружевное бельё», "
+    "«сделай в бикини на пляже».\n\n"
+    "💡 Можно ввести текстом или продиктовать голосом"
+)
+
+ADULT_CREATE_PROMPT_TEXT = (
+    "Отлично. Теперь опишите сцену.\n"
+    "Например: «обнажённая девушка в спальне, мягкий свет», "
+    "«модель топлес у бассейна, фотореализм»."
+)
+
 MY_TRACKS_MENU_TEXT = (
     "🎧 Ниже все треки, которые были созданы тобой.\n"
     "Нажми на название трека, чтобы получить подробную информацию о нём."
@@ -254,13 +268,15 @@ def model_panel_text(user: UserRD, model_key: str) -> str:
 
 
 def generation_started_text(task_id: str, model_key: str) -> str:
-    from bot.utils.image_models import get_image_model
+    from bot.utils.image_models import get_image_model, is_adult_model_key
 
     model = get_image_model(model_key)
+    # В 18+ название модели не показываем.
+    model_line = "" if is_adult_model_key(model_key) else f"🍌 Модель: {model.title}\n"
     return (
         "✅ Генерация запущена!\n"
         f"🆔 Задача: {task_id}\n"
-        f"🍌 Модель: {model.title}\n"
+        f"{model_line}"
         "Я пришлю результат, когда он будет готов."
     )
 
