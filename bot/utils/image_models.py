@@ -105,72 +105,19 @@ OTHER_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
 # от проприетарных FLUX.2 Max/Pro (те всегда возвращали "Request Moderated").
 # AIR-идентификаторы проверены через Runware Model Search и доступны нашему ключу.
 
-# Pony-модели используют booru-стиль: без score-тегов в начале промпта генерят мусор.
-# Префикс добавляется автоматически — пользователю писать score_* не нужно.
-_PONY_PREFIX: Final[str] = "score_9, score_8_up, score_7_up, rating_explicit, "
-_PONY_NEGATIVE: Final[str] = (
-    "score_6, score_5, score_4, censored, mosaic censoring, bar censor, clothed, "
-    "worst quality, low quality, blurry, jpeg artifacts, deformed, bad anatomy, "
-    "extra limbs, extra fingers, mutated hands, watermark, text, signature"
-)
-
+# Раздел 18+: единственная модель FLUX.2 Klein 9B через Prodia (open-weights, без
+# модерации). Максимально базовая конфигурация — без префиксов/negative и без
+# переопределения steps/guidance (используются дефолты Prodia).
 ADULT_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
-    ImageModelOption(
-        key="adult_pony_realism",
-        title="Pony Realism 18+",
-        api_model="civitai:553979@778324",
-        create_api_model="civitai:553979@778324",
-        cost=4,
-        details="фотореализм, без цензуры",
-        button_label="Pony Realism 18+ (4 ген)",
-        provider="runware",
-        prompt_prefix=_PONY_PREFIX,
-        negative_prompt=_PONY_NEGATIVE,
-        img2img_mode="seed",
-        steps=30,
-        cfg_scale=7.0,
-    ),
-    ImageModelOption(
-        # V6 Turbo DPO merge — базовая V6 (@290640) недоступна нашему ключу (failedModelLoad).
-        key="adult_pony",
-        title="Pony V6 18+",
-        api_model="civitai:257749@298112",
-        create_api_model="civitai:257749@298112",
-        cost=3,
-        details="аниме/арт, без цензуры",
-        button_label="Pony V6 18+ (3 ген)",
-        provider="runware",
-        prompt_prefix=_PONY_PREFIX,
-        negative_prompt=_PONY_NEGATIVE,
-        img2img_mode="seed",
-        steps=28,
-        cfg_scale=6.0,
-    ),
-    # FLUX.2 через Prodia (open-weights dev/klein) — естественный язык, без score-тегов.
-    # В отличие от Runware-версий, у Prodia нет выходной модерации и доступны
-    # steps/guidance_scale. img2img/txt2img — раздельные job-типы.
     ImageModelOption(
         key="adult_flux_klein",
         title="FLUX.2 Klein 18+",
         api_model="inference.flux-2.klein.9b.img2img.v1",
         create_api_model="inference.flux-2.klein.9b.txt2img.v1",
         cost=2,
-        details="FLUX, быстро",
+        details="без цензуры",
         button_label="FLUX.2 Klein 18+ (2 ген)",
         provider="prodia",
-        steps=4,  # klein distilled: 1-4 шага
-    ),
-    ImageModelOption(
-        key="adult_flux_dev",
-        title="FLUX.2 Dev 18+",
-        api_model="inference.flux-2.dev.img2img.v1",
-        create_api_model="inference.flux-2.dev.txt2img.v1",
-        cost=3,
-        details="FLUX, качество",
-        button_label="FLUX.2 Dev 18+ (3 ген)",
-        provider="prodia",
-        steps=28,  # dev: 1-50 (default 28)
-        cfg_scale=4.0,  # guidance_scale 1-10 (default 4)
     ),
 )
 
@@ -179,7 +126,7 @@ ALL_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
 )
 
 DEFAULT_IMAGE_MODEL_KEY: Final[str] = "standard"
-DEFAULT_ADULT_IMAGE_MODEL_KEY: Final[str] = "adult_pony_realism"
+DEFAULT_ADULT_IMAGE_MODEL_KEY: Final[str] = "adult_flux_klein"
 
 
 def get_image_model(key: str) -> ImageModelOption:
