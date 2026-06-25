@@ -9,7 +9,7 @@ from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import MenuAction
 from bot.keyboards.inline import ik_main, ik_model_select_for_key, ik_video_settings
 from bot.states import BaseUserState, ImageGenerationState, VideoGenerationState
-from bot.utils.image_models import DEFAULT_IMAGE_MODEL_KEY
+from bot.utils.image_models import DEFAULT_IMAGE_MODEL_KEY, is_adult_model_key
 from bot.utils.image_state import get_image_data, update_image_data
 from bot.utils.messaging import edit_or_answer
 from bot.utils.texts import main_menu_text, model_panel_text
@@ -41,6 +41,9 @@ async def menu_image(
 ) -> None:
     data = await get_image_data(state)
     selected_key = data.model_key or DEFAULT_IMAGE_MODEL_KEY
+    # Не тащим 18+ модель в обычные разделы — сбрасываем на дефолтную.
+    if is_adult_model_key(selected_key):
+        selected_key = DEFAULT_IMAGE_MODEL_KEY
     await state.clear()
     await update_image_data(
         state,
@@ -88,6 +91,9 @@ async def menu_edit(
 ) -> None:
     data = await get_image_data(state)
     selected_key = data.model_key or DEFAULT_IMAGE_MODEL_KEY
+    # Не тащим 18+ модель в обычные разделы — сбрасываем на дефолтную.
+    if is_adult_model_key(selected_key):
+        selected_key = DEFAULT_IMAGE_MODEL_KEY
     await state.clear()
     await update_image_data(
         state,
