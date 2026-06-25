@@ -147,6 +147,8 @@ ADULT_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
         cfg_scale=6.0,
     ),
     # FLUX.2 (distilled) — естественный язык, без score-тегов и negative prompt.
+    # img2img у FLUX идёт через referenceImages (Kontext-style), seedImage не поддерживается,
+    # поэтому оставляем дефолтный режим "reference".
     ImageModelOption(
         key="adult_flux_klein",
         title="FLUX.2 Klein 18+",
@@ -156,7 +158,6 @@ ADULT_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
         details="FLUX, быстро",
         button_label="FLUX.2 Klein 18+ (2 ген)",
         provider="runware",
-        img2img_mode="seed",
         steps=8,
     ),
     ImageModelOption(
@@ -168,7 +169,6 @@ ADULT_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
         details="FLUX, качество",
         button_label="FLUX.2 Dev 18+ (3 ген)",
         provider="runware",
-        img2img_mode="seed",
         steps=24,
         cfg_scale=3.0,
     ),
