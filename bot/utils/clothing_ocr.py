@@ -16,14 +16,20 @@ class ClothingOCRError(Exception):
     """Ошибка распознавания одежды через Agent Platform."""
 
 
-# Просим модель вернуть строго JSON-массив коротких английских названий одежды.
-# Английский — чтобы список ровно лёг в промпт image-модели без двойного перевода.
+# Просим модель вернуть строго JSON-массив коротких РУССКИХ названий одежды —
+# пресеты в боте на русском, перевода нет, поэтому список должен лечь в промпт
+# на том же языке. Явно перечисляем бельё/купальники: это рабочий сценарий
+# раздела, иначе модель их пропускает или «уходит в отказ». Аксессуары
+# (украшения, очки, сумки) исключаем — они только зашумляют список для снятия.
 _OCR_PROMPT = (
-    "You are a clothing detector. Look at the image and list every visible "
-    "clothing item and accessory worn by the people in the frame. "
-    'Use short English noun phrases (e.g. "red dress", "denim jacket", "high heels"). '
-    'Return ONLY a JSON array of strings, e.g. ["dress", "jacket", "shoes"]. '
-    "If there is no clothing visible at all, return an empty array []."
+    "Ты точный детектор одежды для фоторедактора. "
+    "Перечисли каждую вещь одежды, НАДЕТУЮ на человеке(-ах) на фото, включая "
+    "нижнее бельё, бюстгальтер, трусы, лифчик, купальник, бикини, чулки, носки "
+    "и обувь. НЕ включай украшения, очки, часы, сумки и другие аксессуары, "
+    "а также вещи, которые не надеты (лежат рядом). "
+    'Используй короткие русские названия (например: "белая футболка", "клетчатая рубашка", "юбка"). '
+    'Ответь ТОЛЬКО JSON-массивом строк и ничем больше, например: ["платье", "бюстгальтер"]. '
+    "Если надетой одежды на фото нет совсем, ответь []."
 )
 
 
@@ -67,7 +73,7 @@ def _extract_content(message: dict) -> str:
 
 
 async def detect_clothing_items(image_bytes: bytes) -> list[str]:
-    """Распознать одежду на фото. Возвращает список вещей (англ.) или [] если её нет.
+    """Распознать одежду на фото. Возвращает список вещей (рус.) или [] если её нет.
 
     Поднимает ClothingOCRError при сетевой/API-ошибке — это надо отличать от
     «одежды на фото нет» (пустой список), чтобы не отказывать пользователю зря.
@@ -120,4 +126,11 @@ async def detect_clothing_items(image_bytes: bytes) -> list[str]:
         raise ClothingOCRError("Agent Platform не вернул ответ для OCR одежды.")
 
     content = _extract_content(choices[0].get("message") or {})
-    return _parse_items(content)
+    items = _parse_items(content)
+    logger.info(
+        "Clothing OCR (%s): raw=%r -> items=%s",
+        se.agent_platform.vision_model,
+        content[:300],
+        items,
+    )
+    return items

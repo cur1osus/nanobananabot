@@ -114,7 +114,7 @@ class AgentPlatformSettings:
         # Vision-модель для OCR одежды на фото (должна поддерживать images).
         self.vision_model = os.environ.get(
             "AGENT_PLATFORM_VISION_MODEL",
-            "openai/gpt-4o-mini",
+            "google/gemini-2.5-flash",
         )
         self.timeout = int(os.environ.get("AGENT_PLATFORM_TIMEOUT", 60))
 
