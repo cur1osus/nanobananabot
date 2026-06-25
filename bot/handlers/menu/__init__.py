@@ -1,8 +1,9 @@
 from aiogram import Router
 
-from . import contacts, earn, home, how, info, topup, tracks, withdraw
+from . import adult, contacts, earn, home, how, info, topup, tracks, withdraw
 
 router = Router()
+router.include_router(adult.router)
 router.include_router(home.router)
 router.include_router(how.router)
 router.include_router(info.router)

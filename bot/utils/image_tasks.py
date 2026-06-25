@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 
 import aiohttp
@@ -49,6 +50,7 @@ _MODEL_DIMS: dict[str, dict[str, tuple[int, int]]] = {
     "alibaba:wan@2.7-image": _WAN_27_IMAGE_DIMS,
 }
 
+# These Runware model docs require reference images under inputs.referenceImages.
 _INPUT_REFERENCE_IMAGE_MODELS: set[str] = {
     "alibaba:wan@2.7-image",
     "bfl:7@1",
@@ -63,6 +65,16 @@ _OUTPUT_FORMAT_MAP: dict[str, str] = {
     "png": "PNG",
     "webp": "WEBP",
 }
+
+# Сила преобразования для классического img2img (seedImage): чем выше, тем сильнее
+# результат отходит от исходного фото. 0.75 — заметная переработка с сохранением композиции.
+DEFAULT_IMG2IMG_STRENGTH: float = 0.75
+
+# Повтор при failedModelLoad (on-demand загрузка CivitAI-модели): базовая пауза растёт
+# линейно. Число попыток ограничено отдельно, чтобы суммарные паузы укладывались в
+# IMAGE_BACKEND_TOTAL_TIMEOUT (по умолчанию 150с).
+_MODEL_LOAD_RETRY_DELAY: float = 12.0
+_MODEL_LOAD_MAX_ATTEMPTS: int = 3
 
 _runware_semaphore: asyncio.Semaphore | None = None
 _runware_client: Runware | None = None
@@ -118,6 +130,11 @@ def _build_image_inference_request(
     height: int,
     output_format: str,
     reference_images: list[str] | None,
+    negative_prompt: str | None = None,
+    img2img_mode: str = "reference",
+    strength: float = DEFAULT_IMG2IMG_STRENGTH,
+    steps: int | None = None,
+    cfg_scale: float | None = None,
 ) -> IImageInference:
     refs = reference_images or []
     request_kwargs = {
@@ -130,8 +147,19 @@ def _build_image_inference_request(
         "numberResults": 1,
     }
 
+    if negative_prompt:
+        request_kwargs["negativePrompt"] = negative_prompt
+    if steps is not None:
+        request_kwargs["steps"] = steps
+    if cfg_scale is not None:
+        request_kwargs["CFGScale"] = cfg_scale
+
     if refs:
-        if model_id in _INPUT_REFERENCE_IMAGE_MODELS:
+        if img2img_mode == "seed":
+            # Классический SDXL/Pony img2img: одно исходное фото + сила преобразования.
+            request_kwargs["seedImage"] = refs[0]
+            request_kwargs["strength"] = strength
+        elif model_id in _INPUT_REFERENCE_IMAGE_MODELS:
             request_kwargs["inputs"] = {"referenceImages": refs}
         else:
             request_kwargs["referenceImages"] = refs
@@ -150,16 +178,29 @@ async def _download_image(url: str, *, timeout: int) -> bytes:
             return await response.read()
 
 
+def _bytes_to_data_url(image_bytes: bytes) -> str:
+    encoded = base64.b64encode(image_bytes).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
 async def generate_image(
     prompt: str,
     photo_ids: list[str] | None = None,
     model: str | None = None,
-    reference_images: list[str] | None = None,
+    provider: str = "runware",
+    reference_images: list[bytes] | None = None,
     aspect_ratio: str = "1:1",
     output_format: str = "jpeg",
+    negative_prompt: str | None = None,
+    img2img_mode: str = "reference",
+    steps: int | None = None,
+    cfg_scale: float | None = None,
 ) -> bytes:
-    """Generate image via Runware SDK."""
-    del photo_ids
+    """Generate image via Runware.
+
+    ``reference_images`` are raw image bytes, encoded as base64 data URLs.
+    """
+    del photo_ids, provider
 
     if se.image_backend.provider != "runware":
         raise ImageGenerationError(
@@ -173,6 +214,11 @@ async def generate_image(
     model_id = model or se.image_backend.model
     width, height = _aspect_ratio_to_dims(aspect_ratio, model_id)
     fmt = _OUTPUT_FORMAT_MAP.get(output_format.lower(), "JPG")
+    data_url_refs = (
+        [_bytes_to_data_url(image) for image in reference_images]
+        if reference_images
+        else None
+    )
 
     logger.info(
         "Image generation request: provider=runware model=%s refs=%s dims=%dx%d",
@@ -188,17 +234,36 @@ async def generate_image(
         width=width,
         height=height,
         output_format=fmt,
-        reference_images=reference_images,
+        reference_images=data_url_refs,
+        negative_prompt=negative_prompt,
+        img2img_mode=img2img_mode,
+        steps=steps,
+        cfg_scale=cfg_scale,
     )
 
     async with _get_runware_semaphore():
         try:
             async with asyncio.timeout(se.image_backend.total_timeout):
                 client = await _get_runware_client()
-                try:
-                    images = await client.imageInference(requestImage=request)
-                except Exception as exc:
-                    raise ImageGenerationError(f"Ошибка Runware SDK: {exc}") from exc
+                # CivitAI-чекпойнты грузятся on-demand: первый запрос может вернуть
+                # failedModelLoad, пока модель подгружается. Повторяем с паузой.
+                max_attempts = _MODEL_LOAD_MAX_ATTEMPTS
+                images = None
+                for attempt in range(max_attempts):
+                    try:
+                        images = await client.imageInference(requestImage=request)
+                        break
+                    except Exception as exc:
+                        if "failedModelLoad" in str(exc) and attempt + 1 < max_attempts:
+                            delay = _MODEL_LOAD_RETRY_DELAY * (attempt + 1)
+                            logger.warning(
+                                "Runware failedModelLoad (model=%s), retry in %.0fs "
+                                "(attempt %d/%d)",
+                                model_id, delay, attempt + 1, max_attempts,
+                            )
+                            await asyncio.sleep(delay)
+                            continue
+                        raise ImageGenerationError(f"Ошибка Runware SDK: {exc}") from exc
 
                 if not images:
                     raise ImageGenerationError(

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import logging
 import uuid
 
@@ -65,6 +64,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_REFERENCES = 4
 NANO2_MAX_REFERENCES = 8
+GPT_IMAGE_2_MAX_REFERENCES = 16
 
 CREATE_RATIO_MAP: dict[str, str] = {
     "auto": "auto",
@@ -83,6 +83,8 @@ CREATE_RATIO_MAP: dict[str, str] = {
 
 
 def _photo_limit_for_model(model_key: str) -> int:
+    if model_key == "gpt_image_2":
+        return GPT_IMAGE_2_MAX_REFERENCES
     if model_key == "nano2":
         return NANO2_MAX_REFERENCES
     return DEFAULT_MAX_REFERENCES
@@ -102,7 +104,7 @@ async def _download_telegram_file(bot_token: str, file_path: str) -> bytes:
             return await response.read()
 
 
-async def _build_reference_images(message: Message, photo_ids: list[str]) -> list[str]:
+async def _build_reference_images(message: Message, photo_ids: list[str]) -> list[bytes]:
     bot = message.bot
     if bot is None:
         return []
@@ -111,19 +113,18 @@ async def _build_reference_images(message: Message, photo_ids: list[str]) -> lis
     if not bot_token:
         return []
 
-    image_urls: list[str] = []
+    images: list[bytes] = []
     for file_id in photo_ids[:10]:
         try:
             file = await bot.get_file(file_id)
             if not file.file_path:
                 continue
             image_bytes = await _download_telegram_file(bot_token, file.file_path)
-            image_b64 = base64.b64encode(image_bytes).decode("ascii")
-            image_urls.append(f"data:image/jpeg;base64,{image_b64}")
+            images.append(image_bytes)
         except Exception:
             logger.exception("Failed to prepare image reference: file_id=%s", file_id)
 
-    return image_urls
+    return images
 
 
 def _generation_error_text(error: Exception) -> str:
@@ -212,14 +213,21 @@ async def _run_image_generation(
     task_id = uuid.uuid4().hex[:8]
     status_msg = await message.answer(generation_started_text(task_id, data.model_key))
 
+    positive_prompt = f"{model.prompt_prefix}{normalized_prompt}"
+
     try:
         reference_images = await _build_reference_images(message, data.photos)
         image_bytes = await generate_image(
-            prompt=normalized_prompt,
+            prompt=positive_prompt,
             model=model.api_model,
+            provider=model.provider,
             reference_images=reference_images,
             aspect_ratio=data.aspect_ratio,
             output_format="jpeg",
+            negative_prompt=model.negative_prompt or None,
+            img2img_mode=model.img2img_mode,
+            steps=model.steps,
+            cfg_scale=model.cfg_scale,
         )
         await deduct_user_credits(
             session=session,
@@ -300,13 +308,20 @@ async def _run_create_generation(
     task_id = uuid.uuid4().hex[:8]
     status_msg = await message.answer(generation_started_text(task_id, data.model_key))
 
+    positive_prompt = f"{model.prompt_prefix}{normalized_prompt}"
+
     try:
         image_bytes = await generate_image(
-            prompt=normalized_prompt,
+            prompt=positive_prompt,
             model=model.create_api_model,
+            provider=model.provider,
             reference_images=None,
             aspect_ratio=data.aspect_ratio,
             output_format="jpeg",
+            negative_prompt=model.negative_prompt or None,
+            img2img_mode=model.img2img_mode,
+            steps=model.steps,
+            cfg_scale=model.cfg_scale,
         )
         await deduct_user_credits(
             session=session,

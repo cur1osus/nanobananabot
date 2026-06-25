@@ -20,10 +20,13 @@ from bot.keyboards.factories import (
     WithdrawAction,
 )
 from bot.utils.image_models import (
+    ADULT_IMAGE_MODELS,
     ALL_IMAGE_MODELS,
+    DEFAULT_ADULT_IMAGE_MODEL_KEY,
     DEFAULT_IMAGE_MODEL_KEY,
     IMAGE_MODELS,
     OTHER_IMAGE_MODELS,
+    is_adult_model_key,
 )
 from bot.utils.texts import get_topup_method, get_topup_tariffs
 from bot.utils.video_models import KLING_MODELS, VIDEO_RATIO_MAP, get_kling_model
@@ -93,9 +96,60 @@ async def ik_other_image_model_select(
     return builder.as_markup()
 
 
+async def ik_adult_consent() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="✅ Мне есть 18 лет",
+        callback_data=MenuAction(action="adult_confirm").pack(),
+    )
+    builder.button(
+        text="🔙 Назад",
+        callback_data=MenuAction(action="home").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_adult_menu() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="✨ Создать по описанию",
+        callback_data=MenuAction(action="adult_create").pack(),
+    )
+    builder.button(
+        text="🖌 Редактировать фото",
+        callback_data=MenuAction(action="adult_edit").pack(),
+    )
+    builder.button(
+        text="🏠 В главное меню",
+        callback_data=MenuAction(action="home").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_adult_image_model_select(
+    selected_key: str = DEFAULT_ADULT_IMAGE_MODEL_KEY,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for option in ADULT_IMAGE_MODELS:
+        builder.button(
+            text=_model_button_label(option.key, selected_key),
+            callback_data=ModelSelect(model=option.key).pack(),
+        )
+    builder.button(
+        text="🏠 В главное меню",
+        callback_data=MenuAction(action="home").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 async def ik_model_select_for_key(
     selected_key: str = DEFAULT_IMAGE_MODEL_KEY,
 ) -> InlineKeyboardMarkup:
+    if is_adult_model_key(selected_key):
+        return await ik_adult_image_model_select(selected_key)
     if any(opt.key == selected_key for opt in IMAGE_MODELS):
         return await ik_image_model_select(selected_key)
     return await ik_other_image_model_select(selected_key)
@@ -199,6 +253,12 @@ async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:
         text="✨ Генерация изображения",
         callback_data=MenuAction(action="image").pack(),
     )
+    # Раздел 18+ временно доступен только админам (тестовый период).
+    if is_admin:
+        builder.button(
+            text="🔞 18+ генерация",
+            callback_data=MenuAction(action="adult").pack(),
+        )
     builder.button(
         text="🎬 Создать видео",
         callback_data=MenuAction(action="video").pack(),
@@ -282,9 +342,9 @@ async def ik_topup_plans(method: str) -> InlineKeyboardMarkup:
     tariffs = get_topup_tariffs(method)
     for tariff in tariffs:
         if method_info and method_info.key == "stars":
-            text = f"{tariff.price} ⭐️ → {tariff.credits} генераций"
+            text = f"{tariff.price} ⭐️ → {tariff.credits} кредитов"
         else:
-            text = f"{tariff.price} ₽ → {tariff.credits} генераций"
+            text = f"{tariff.price} ₽ → {tariff.credits} кредитов"
         builder.button(
             text=text,
             callback_data=TopupPlan(method=method, plan=tariff.plan).pack(),

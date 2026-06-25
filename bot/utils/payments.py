@@ -70,7 +70,7 @@ def build_invoice(
     tariff: TopupTariff,
 ) -> InvoiceConfig:
     title = f"Пополнение: {tariff.credits} кредитов"
-    description = f"{tariff.credits} кредитов ({tariff.songs} генераций)"
+    description = f"{tariff.credits} кредитов"
     payload = build_payload(method.key, tariff.plan)
     if method.key == "stars":
         currency = STARS_CURRENCY
