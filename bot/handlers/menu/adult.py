@@ -11,13 +11,19 @@ from bot.keyboards.factories import MenuAction
 from bot.keyboards.inline import (
     ik_adult_consent,
     ik_adult_menu,
-    ik_model_select_for_key,
+    ik_create_aspect_ratio,
+    ik_image_waiting_photos,
 )
 from bot.states import ImageGenerationState
-from bot.utils.image_models import DEFAULT_ADULT_IMAGE_MODEL_KEY, is_adult_model_key
-from bot.utils.image_state import get_image_data, update_image_data
+from bot.utils.image_models import DEFAULT_ADULT_IMAGE_MODEL_KEY
+from bot.utils.image_state import update_image_data
 from bot.utils.messaging import edit_or_answer
-from bot.utils.texts import ADULT_CONSENT_TEXT, ADULT_MENU_TEXT, model_panel_text
+from bot.utils.texts import (
+    ADULT_CONSENT_TEXT,
+    ADULT_MENU_TEXT,
+    CREATE_ASPECT_RATIO_TEXT,
+    PHOTO_REQUEST_TEXT,
+)
 
 router = Router()
 
@@ -47,15 +53,6 @@ async def _guard(query: CallbackQuery, user: UserRD, redis: Redis) -> bool:
         )
         return False
     return True
-
-
-async def _adult_model_key(state: FSMContext) -> str:
-    data = await get_image_data(state)
-    return (
-        data.model_key
-        if is_adult_model_key(data.model_key)
-        else DEFAULT_ADULT_IMAGE_MODEL_KEY
-    )
 
 
 async def _show_adult_menu(query: CallbackQuery) -> None:
@@ -101,23 +98,22 @@ async def menu_adult_create(
 ) -> None:
     if not await _guard(query, user, redis):
         return
-    selected_key = await _adult_model_key(state)
+    # Модель в 18+ одна — выбор не показываем, сразу к формату и промпту.
     await state.clear()
     await update_image_data(
         state,
-        model_key=selected_key,
+        model_key=DEFAULT_ADULT_IMAGE_MODEL_KEY,
         photos=[],
         prompt="",
         prompt_requested=False,
         aspect_ratio="auto",
     )
-    # Состояние waiting_create_model → выбор модели уведёт в txt2img-flow.
-    await state.set_state(ImageGenerationState.waiting_create_model)
+    await state.set_state(ImageGenerationState.waiting_create_aspect)
     await query.answer()
     await edit_or_answer(
         query,
-        text=model_panel_text(user, selected_key),
-        reply_markup=await ik_model_select_for_key(selected_key),
+        text=CREATE_ASPECT_RATIO_TEXT,
+        reply_markup=await ik_create_aspect_ratio(is_adult=True),
     )
 
 
@@ -130,20 +126,20 @@ async def menu_adult_edit(
 ) -> None:
     if not await _guard(query, user, redis):
         return
-    selected_key = await _adult_model_key(state)
+    # Модель в 18+ одна — выбор не показываем, сразу просим фото.
     await state.clear()
     await update_image_data(
         state,
-        model_key=selected_key,
+        model_key=DEFAULT_ADULT_IMAGE_MODEL_KEY,
         photos=[],
         prompt="",
         prompt_requested=False,
         aspect_ratio="auto",
     )
-    # Без waiting_create_model выбор модели уведёт в img2img-flow (запрос фото).
+    await state.set_state(ImageGenerationState.waiting_photos)
     await query.answer()
     await edit_or_answer(
         query,
-        text=model_panel_text(user, selected_key),
-        reply_markup=await ik_model_select_for_key(selected_key),
+        text=PHOTO_REQUEST_TEXT,
+        reply_markup=await ik_image_waiting_photos(is_adult=True),
     )

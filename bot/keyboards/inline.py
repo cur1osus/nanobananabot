@@ -4,7 +4,6 @@ from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.keyboards.factories import (
-    AdultPreset,
     CreateAspectRatio,
     ImageNav,
     ImageResultAction,
@@ -20,7 +19,6 @@ from bot.keyboards.factories import (
     VideoSetting,
     WithdrawAction,
 )
-from bot.utils.adult_presets import ADULT_PRESETS
 from bot.utils.image_models import (
     ADULT_IMAGE_MODELS,
     ALL_IMAGE_MODELS,
@@ -157,12 +155,19 @@ async def ik_model_select_for_key(
     return await ik_other_image_model_select(selected_key)
 
 
-async def ik_image_waiting_photos() -> InlineKeyboardMarkup:
+async def ik_image_waiting_photos(is_adult: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(
-        text="🔙 К выбору модели",
-        callback_data=ModelMenu().pack(),
-    )
+    # В 18+ выбора модели нет — кнопка «Назад» ведёт в меню раздела.
+    if is_adult:
+        builder.button(
+            text="🔙 Назад",
+            callback_data=MenuAction(action="adult").pack(),
+        )
+    else:
+        builder.button(
+            text="🔙 К выбору модели",
+            callback_data=ModelMenu().pack(),
+        )
     builder.button(
         text="🏠 В главное меню",
         callback_data=MenuAction(action="home").pack(),
@@ -199,36 +204,6 @@ async def ik_prompt_nav() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-async def ik_adult_create_prompt() -> InlineKeyboardMarkup:
-    """Экран ввода промпта 18+: готовые пресеты + ручной ввод."""
-    builder = InlineKeyboardBuilder()
-    for i, (label, _) in enumerate(ADULT_PRESETS):
-        builder.button(text=label, callback_data=AdultPreset(index=i).pack())
-    builder.button(
-        text="🔙 К выбору формата",
-        callback_data=ImageNav(action="to_create_aspect").pack(),
-    )
-    builder.button(
-        text="🏠 В главное меню",
-        callback_data=MenuAction(action="home").pack(),
-    )
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-async def ik_adult_edit_prompt() -> InlineKeyboardMarkup:
-    """Экран ввода промпта 18+ в режиме редактирования: пресеты + ручной ввод."""
-    builder = InlineKeyboardBuilder()
-    for i, (label, _) in enumerate(ADULT_PRESETS):
-        builder.button(text=label, callback_data=AdultPreset(index=i).pack())
-    builder.button(
-        text="↩️ Назад",
-        callback_data=ImageNav(action="to_photos").pack(),
-    )
-    builder.adjust(1)
-    return builder.as_markup()
-
-
 async def ik_create_prompt_nav() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
@@ -243,7 +218,7 @@ async def ik_create_prompt_nav() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-async def ik_create_aspect_ratio() -> InlineKeyboardMarkup:
+async def ik_create_aspect_ratio(is_adult: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     options = (
         ("auto", "🔁 Auto"),
@@ -263,10 +238,17 @@ async def ik_create_aspect_ratio() -> InlineKeyboardMarkup:
             text=label,
             callback_data=CreateAspectRatio(ratio=ratio).pack(),
         )
-    builder.button(
-        text="🔙 К выбору модели",
-        callback_data=ModelMenu().pack(),
-    )
+    # В 18+ выбора модели нет — кнопка «Назад» ведёт в меню раздела.
+    if is_adult:
+        builder.button(
+            text="🔙 Назад",
+            callback_data=MenuAction(action="adult").pack(),
+        )
+    else:
+        builder.button(
+            text="🔙 К выбору модели",
+            callback_data=ModelMenu().pack(),
+        )
     builder.button(
         text="🏠 В главное меню",
         callback_data=MenuAction(action="home").pack(),

@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.db.func import deduct_user_credits
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import (
-    AdultPreset,
     CreateAspectRatio,
     ImageNav,
     ImageResultAction,
@@ -23,8 +22,6 @@ from bot.keyboards.factories import (
     ModelSelect,
 )
 from bot.keyboards.inline import (
-    ik_adult_create_prompt,
-    ik_adult_edit_prompt,
     ik_back_home,
     ik_create_aspect_ratio,
     ik_create_prompt_nav,
@@ -36,14 +33,6 @@ from bot.keyboards.inline import (
     ik_prompt_nav,
 )
 from bot.states import BaseUserState, ImageGenerationState
-from bot.utils.adult_presets import (
-    ADULT_PRESETS,
-    build_preset_prompt,
-    expand_clothing_key,
-    get_adult_preset,
-    preset_requires_clothing,
-)
-from bot.utils.clothing_ocr import ClothingOCRError, detect_clothing_items
 from bot.utils.image_models import (
     DEFAULT_IMAGE_MODEL_KEY,
     get_image_model,
@@ -497,7 +486,7 @@ async def remind_photos(
     data = await get_image_data(state)
     await message.answer(
         _photo_request_text(data.model_key),
-        reply_markup=await ik_image_waiting_photos(),
+        reply_markup=await ik_image_waiting_photos(is_adult_model_key(data.model_key)),
     )
 
 
@@ -510,6 +499,7 @@ async def handle_image_nav(
 ) -> None:
     data = await get_image_data(state)
     selected_key = data.model_key or DEFAULT_IMAGE_MODEL_KEY
+    is_adult = is_adult_model_key(selected_key)
 
     if callback_data.action == "to_photos":
         await state.set_state(ImageGenerationState.waiting_photos)
@@ -517,7 +507,7 @@ async def handle_image_nav(
         await edit_or_answer(
             query,
             text=_photo_request_text(selected_key),
-            reply_markup=await ik_image_waiting_photos(),
+            reply_markup=await ik_image_waiting_photos(is_adult),
         )
         return
 
@@ -527,7 +517,7 @@ async def handle_image_nav(
         await edit_or_answer(
             query,
             text=CREATE_ASPECT_RATIO_TEXT,
-            reply_markup=await ik_create_aspect_ratio(),
+            reply_markup=await ik_create_aspect_ratio(is_adult),
         )
         return
 
@@ -592,7 +582,9 @@ async def handle_result_actions(
         if isinstance(query.message, Message):
             await query.message.answer(
                 _photo_request_text(data.model_key),
-                reply_markup=await ik_image_waiting_photos(),
+                reply_markup=await ik_image_waiting_photos(
+                    is_adult_model_key(data.model_key)
+                ),
             )
         return
 
@@ -631,13 +623,9 @@ async def collect_photos(
     prompt_requested = data.prompt_requested
     if not prompt_requested:
         prompt_requested = True
-        if is_adult_model_key(data.model_key) and ADULT_PRESETS:
-            prompt_markup = await ik_adult_edit_prompt()
-        else:
-            prompt_markup = await ik_prompt_nav()
         await message.answer(
             PROMPT_REQUEST_TEXT,
-            reply_markup=prompt_markup,
+            reply_markup=await ik_prompt_nav(),
         )
         await state.set_state(ImageGenerationState.waiting_prompt)
 
@@ -720,10 +708,11 @@ async def collect_prompt_voice(
 
 
 @router.message(ImageGenerationState.waiting_create_aspect)
-async def remind_create_aspect(message: Message) -> None:
+async def remind_create_aspect(message: Message, state: FSMContext) -> None:
+    data = await get_image_data(state)
     await message.answer(
         "Выберите соотношение сторон кнопками ниже.",
-        reply_markup=await ik_create_aspect_ratio(),
+        reply_markup=await ik_create_aspect_ratio(is_adult_model_key(data.model_key)),
     )
 
 
@@ -740,7 +729,7 @@ async def select_create_aspect_ratio(
         await query.answer("Неизвестное соотношение", show_alert=True)
         return
 
-    data = await update_image_data(
+    await update_image_data(
         state,
         photos=[],
         prompt="",
@@ -749,11 +738,9 @@ async def select_create_aspect_ratio(
     )
     await state.set_state(ImageGenerationState.waiting_create_prompt)
     await query.answer()
-    if is_adult_model_key(data.model_key) and ADULT_PRESETS:
-        markup = await ik_adult_create_prompt()
-    else:
-        markup = await ik_create_prompt_nav()
-    await edit_or_answer(query, text=CREATE_PROMPT_TEXT, reply_markup=markup)
+    await edit_or_answer(
+        query, text=CREATE_PROMPT_TEXT, reply_markup=await ik_create_prompt_nav()
+    )
 
 
 @router.message(ImageGenerationState.waiting_create_prompt, F.photo)
@@ -798,88 +785,6 @@ async def quick_start_from_photo(
         PROMPT_REQUEST_TEXT,
         reply_markup=await ik_prompt_nav(),
     )
-
-
-@router.callback_query(AdultPreset.filter())
-async def use_adult_preset(
-    query: CallbackQuery,
-    callback_data: AdultPreset,
-    state: FSMContext,
-    user: UserRD,
-    session: AsyncSession,
-    redis: Redis,
-) -> None:
-    preset = get_adult_preset(callback_data.index)
-    if preset is None:
-        await query.answer("Пресет недоступен", show_alert=True)
-        return
-    if not isinstance(query.message, Message):
-        await query.answer()
-        return
-
-    data = await get_image_data(state)
-
-    # Пресет с ключом {clothing}: нужно фото и распознавание одежды на нём.
-    if preset_requires_clothing(preset):
-        if not data.photos:
-            await query.answer(
-                "Для этого пресета сначала пришлите фото.", show_alert=True
-            )
-            return
-        await query.answer()
-        notice = await query.message.answer("🔎 Распознаю одежду на фото…")
-        try:
-            reference_images = await _build_reference_images(
-                query.message, data.photos[:1]
-            )
-            if not reference_images:
-                raise ClothingOCRError("Не удалось загрузить фото для OCR.")
-            items = await detect_clothing_items(reference_images[0])
-        except ClothingOCRError:
-            logger.exception("Clothing OCR failed")
-            await notice.edit_text(
-                "❌ Не удалось распознать одежду на фото. Попробуйте ещё раз."
-            )
-            return
-        if not items:
-            await notice.edit_text(
-                "❌ На фото не обнаружено одежды — этот пресет недоступен.\n"
-                "Пришлите фото, где есть одежда."
-            )
-            return
-        await notice.delete()
-        final_prompt = build_preset_prompt(expand_clothing_key(preset, items))
-        await _run_image_generation(
-            message=query.message,
-            state=state,
-            user=user,
-            session=session,
-            redis=redis,
-            prompt=final_prompt,
-        )
-        return
-
-    # Обычный пресет: с фото — редактирование (img2img), без фото — создание.
-    await query.answer()
-    prompt = build_preset_prompt(preset)
-    if data.photos:
-        await _run_image_generation(
-            message=query.message,
-            state=state,
-            user=user,
-            session=session,
-            redis=redis,
-            prompt=prompt,
-        )
-    else:
-        await _run_create_generation(
-            message=query.message,
-            state=state,
-            user=user,
-            session=session,
-            redis=redis,
-            prompt=prompt,
-        )
 
 
 @router.message(ImageGenerationState.waiting_create_prompt, F.text)
