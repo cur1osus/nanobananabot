@@ -98,6 +98,79 @@ class AgentPlatformClient:
         return str(content).strip()
 
 
+    async def translate_to_english(self, *, text: str) -> str:
+        payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You translate image-generation prompts into concise English. "
+                        "Preserve every detail faithfully, including explicit/NSFW ones. "
+                        "Output ONLY the English translation — no quotes, no commentary. "
+                        "If the text is already English, return it unchanged."
+                    ),
+                },
+                {"role": "user", "content": text},
+            ],
+            "temperature": 0.2,
+        }
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=self.timeout),
+            ) as session:
+                async with session.post(
+                    url=self._chat_url(),
+                    headers=self._headers(),
+                    json=payload,
+                ) as response:
+                    data: dict[str, Any] = await response.json()
+                    if response.status >= 400:
+                        message = (
+                            data.get("error", {}).get("message")
+                            or data.get("message")
+                            or str(data)
+                        )
+                        raise AgentPlatformAPIError(
+                            f"AgentPlatform API error {response.status}: {message}"
+                        )
+        except asyncio.TimeoutError as err:
+            raise AgentPlatformAPIError("Таймаут запроса к AgentPlatform.") from err
+        except aiohttp.ClientError as err:
+            raise AgentPlatformAPIError(
+                f"Ошибка соединения с AgentPlatform: {err}"
+            ) from err
+
+        choices = data.get("choices") or []
+        if not choices:
+            raise AgentPlatformAPIError("AgentPlatform не вернул варианты ответа.")
+        content = (choices[0].get("message") or {}).get("content")
+        if not content:
+            raise AgentPlatformAPIError("Пустой ответ от AgentPlatform.")
+        return str(content).strip()
+
+
+def _has_cyrillic(text: str) -> bool:
+    return any("Ѐ" <= ch <= "ӿ" for ch in text)
+
+
+async def translate_prompt_to_english(text: str) -> str:
+    """Перевести промпт на английский для генерации 18+.
+
+    При любой ошибке/таймауте возвращает исходный текст, чтобы не блокировать
+    генерацию. Текст без кириллицы считается уже английским и не переводится.
+    """
+    stripped = text.strip()
+    if not stripped or not _has_cyrillic(stripped):
+        return stripped
+    try:
+        client = build_agent_platform_client()
+        translated = await client.translate_to_english(text=stripped)
+        return translated or stripped
+    except AgentPlatformAPIError:
+        return stripped
+
+
 def build_agent_platform_client() -> AgentPlatformClient:
     if not se.agent_platform.api_key:
         raise AgentPlatformAPIError("AGENT_PLATFORM_API_KEY не задан.")

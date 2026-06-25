@@ -146,6 +146,32 @@ ADULT_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
         steps=28,
         cfg_scale=6.0,
     ),
+    # FLUX.2 (distilled) — естественный язык, без score-тегов и negative prompt.
+    ImageModelOption(
+        key="adult_flux_klein",
+        title="FLUX.2 Klein 18+",
+        api_model="runware:400@2",
+        create_api_model="runware:400@2",
+        cost=2,
+        details="FLUX, быстро",
+        button_label="FLUX.2 Klein 18+ (2 ген)",
+        provider="runware",
+        img2img_mode="seed",
+        steps=8,
+    ),
+    ImageModelOption(
+        key="adult_flux_dev",
+        title="FLUX.2 Dev 18+",
+        api_model="runware:400@1",
+        create_api_model="runware:400@1",
+        cost=3,
+        details="FLUX, качество",
+        button_label="FLUX.2 Dev 18+ (3 ген)",
+        provider="runware",
+        img2img_mode="seed",
+        steps=24,
+        cfg_scale=3.0,
+    ),
 )
 
 ALL_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (

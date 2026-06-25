@@ -33,9 +33,11 @@ from bot.keyboards.inline import (
     ik_prompt_nav,
 )
 from bot.states import BaseUserState, ImageGenerationState
+from bot.utils.agent_platform import translate_prompt_to_english
 from bot.utils.image_models import (
     DEFAULT_IMAGE_MODEL_KEY,
     get_image_model,
+    is_adult_model_key,
     is_image_model_key,
 )
 from bot.utils.image_state import get_image_data, update_image_data
@@ -213,7 +215,10 @@ async def _run_image_generation(
     task_id = uuid.uuid4().hex[:8]
     status_msg = await message.answer(generation_started_text(task_id, data.model_key))
 
-    positive_prompt = f"{model.prompt_prefix}{normalized_prompt}"
+    gen_prompt = normalized_prompt
+    if is_adult_model_key(data.model_key):
+        gen_prompt = await translate_prompt_to_english(normalized_prompt)
+    positive_prompt = f"{model.prompt_prefix}{gen_prompt}"
 
     try:
         reference_images = await _build_reference_images(message, data.photos)
@@ -308,7 +313,10 @@ async def _run_create_generation(
     task_id = uuid.uuid4().hex[:8]
     status_msg = await message.answer(generation_started_text(task_id, data.model_key))
 
-    positive_prompt = f"{model.prompt_prefix}{normalized_prompt}"
+    gen_prompt = normalized_prompt
+    if is_adult_model_key(data.model_key):
+        gen_prompt = await translate_prompt_to_english(normalized_prompt)
+    positive_prompt = f"{model.prompt_prefix}{gen_prompt}"
 
     try:
         image_bytes = await generate_image(
