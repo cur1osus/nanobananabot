@@ -111,6 +111,11 @@ class AgentPlatformSettings:
             "AGENT_PLATFORM_MODEL",
             "cloudru/openai/gpt-oss-120b",
         )
+        # Vision-модель для OCR одежды на фото (должна поддерживать images).
+        self.vision_model = os.environ.get(
+            "AGENT_PLATFORM_VISION_MODEL",
+            "openai/gpt-4o-mini",
+        )
         self.timeout = int(os.environ.get("AGENT_PLATFORM_TIMEOUT", 60))
 
 

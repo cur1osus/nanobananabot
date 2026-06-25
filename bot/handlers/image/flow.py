@@ -24,6 +24,7 @@ from bot.keyboards.factories import (
 )
 from bot.keyboards.inline import (
     ik_adult_create_prompt,
+    ik_adult_edit_prompt,
     ik_back_home,
     ik_create_aspect_ratio,
     ik_create_prompt_nav,
@@ -38,9 +39,11 @@ from bot.states import BaseUserState, ImageGenerationState
 from bot.utils.adult_presets import (
     ADULT_PRESETS,
     build_preset_prompt,
+    expand_clothing_key,
     get_adult_preset,
+    preset_requires_clothing,
 )
-from bot.utils.translate import translate_prompt_to_english
+from bot.utils.clothing_ocr import ClothingOCRError, detect_clothing_items
 from bot.utils.image_models import (
     DEFAULT_IMAGE_MODEL_KEY,
     get_image_model,
@@ -222,12 +225,7 @@ async def _run_image_generation(
     task_id = uuid.uuid4().hex[:8]
     status_msg = await message.answer(generation_started_text(task_id, data.model_key))
 
-    gen_prompt = normalized_prompt
-    if is_adult_model_key(data.model_key):
-        gen_prompt = await translate_prompt_to_english(normalized_prompt)
-    positive_prompt = f"{model.prompt_prefix}{gen_prompt}".strip()
-    if len(positive_prompt) < 2:
-        positive_prompt = f"{model.prompt_prefix}{normalized_prompt}".strip()
+    positive_prompt = f"{model.prompt_prefix}{normalized_prompt}".strip()
 
     try:
         reference_images = await _build_reference_images(message, data.photos)
@@ -322,12 +320,7 @@ async def _run_create_generation(
     task_id = uuid.uuid4().hex[:8]
     status_msg = await message.answer(generation_started_text(task_id, data.model_key))
 
-    gen_prompt = normalized_prompt
-    if is_adult_model_key(data.model_key):
-        gen_prompt = await translate_prompt_to_english(normalized_prompt)
-    positive_prompt = f"{model.prompt_prefix}{gen_prompt}".strip()
-    if len(positive_prompt) < 2:
-        positive_prompt = f"{model.prompt_prefix}{normalized_prompt}".strip()
+    positive_prompt = f"{model.prompt_prefix}{normalized_prompt}".strip()
 
     try:
         image_bytes = await generate_image(
@@ -638,9 +631,13 @@ async def collect_photos(
     prompt_requested = data.prompt_requested
     if not prompt_requested:
         prompt_requested = True
+        if is_adult_model_key(data.model_key) and ADULT_PRESETS:
+            prompt_markup = await ik_adult_edit_prompt()
+        else:
+            prompt_markup = await ik_prompt_nav()
         await message.answer(
             PROMPT_REQUEST_TEXT,
-            reply_markup=await ik_prompt_nav(),
+            reply_markup=prompt_markup,
         )
         await state.set_state(ImageGenerationState.waiting_prompt)
 
@@ -816,15 +813,72 @@ async def use_adult_preset(
     if preset is None:
         await query.answer("Пресет недоступен", show_alert=True)
         return
+    if not isinstance(query.message, Message):
+        await query.answer()
+        return
+
+    data = await get_image_data(state)
+
+    # Пресет с ключом {clothing}: нужно фото и распознавание одежды на нём.
+    if preset_requires_clothing(preset):
+        if not data.photos:
+            await query.answer(
+                "Для этого пресета сначала пришлите фото.", show_alert=True
+            )
+            return
+        await query.answer()
+        notice = await query.message.answer("🔎 Распознаю одежду на фото…")
+        try:
+            reference_images = await _build_reference_images(
+                query.message, data.photos[:1]
+            )
+            if not reference_images:
+                raise ClothingOCRError("Не удалось загрузить фото для OCR.")
+            items = await detect_clothing_items(reference_images[0])
+        except ClothingOCRError:
+            logger.exception("Clothing OCR failed")
+            await notice.edit_text(
+                "❌ Не удалось распознать одежду на фото. Попробуйте ещё раз."
+            )
+            return
+        if not items:
+            await notice.edit_text(
+                "❌ На фото не обнаружено одежды — этот пресет недоступен.\n"
+                "Пришлите фото, где есть одежда."
+            )
+            return
+        await notice.delete()
+        final_prompt = build_preset_prompt(expand_clothing_key(preset, items))
+        await _run_image_generation(
+            message=query.message,
+            state=state,
+            user=user,
+            session=session,
+            redis=redis,
+            prompt=final_prompt,
+        )
+        return
+
+    # Обычный пресет: с фото — редактирование (img2img), без фото — создание.
     await query.answer()
-    if isinstance(query.message, Message):
+    prompt = build_preset_prompt(preset)
+    if data.photos:
+        await _run_image_generation(
+            message=query.message,
+            state=state,
+            user=user,
+            session=session,
+            redis=redis,
+            prompt=prompt,
+        )
+    else:
         await _run_create_generation(
             message=query.message,
             state=state,
             user=user,
             session=session,
             redis=redis,
-            prompt=build_preset_prompt(preset),
+            prompt=prompt,
         )
 
 

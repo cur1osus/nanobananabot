@@ -216,6 +216,19 @@ async def ik_adult_create_prompt() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+async def ik_adult_edit_prompt() -> InlineKeyboardMarkup:
+    """Экран ввода промпта 18+ в режиме редактирования: пресеты + ручной ввод."""
+    builder = InlineKeyboardBuilder()
+    for i, (label, _) in enumerate(ADULT_PRESETS):
+        builder.button(text=label, callback_data=AdultPreset(index=i).pack())
+    builder.button(
+        text="↩️ Назад",
+        callback_data=ImageNav(action="to_photos").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 async def ik_create_prompt_nav() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
