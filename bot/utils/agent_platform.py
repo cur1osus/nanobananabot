@@ -165,8 +165,9 @@ async def translate_prompt_to_english(text: str) -> str:
         return stripped
     try:
         client = build_agent_platform_client()
-        translated = await client.translate_to_english(text=stripped)
-        return translated or stripped
+        translated = (await client.translate_to_english(text=stripped)).strip()
+        # Слишком короткий перевод (например refusal/пунктуация) — берём оригинал.
+        return translated if len(translated) >= 2 else stripped
     except AgentPlatformAPIError:
         return stripped
 

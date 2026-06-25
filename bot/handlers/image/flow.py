@@ -218,7 +218,9 @@ async def _run_image_generation(
     gen_prompt = normalized_prompt
     if is_adult_model_key(data.model_key):
         gen_prompt = await translate_prompt_to_english(normalized_prompt)
-    positive_prompt = f"{model.prompt_prefix}{gen_prompt}"
+    positive_prompt = f"{model.prompt_prefix}{gen_prompt}".strip()
+    if len(positive_prompt) < 2:
+        positive_prompt = f"{model.prompt_prefix}{normalized_prompt}".strip()
 
     try:
         reference_images = await _build_reference_images(message, data.photos)
@@ -316,7 +318,9 @@ async def _run_create_generation(
     gen_prompt = normalized_prompt
     if is_adult_model_key(data.model_key):
         gen_prompt = await translate_prompt_to_english(normalized_prompt)
-    positive_prompt = f"{model.prompt_prefix}{gen_prompt}"
+    positive_prompt = f"{model.prompt_prefix}{gen_prompt}".strip()
+    if len(positive_prompt) < 2:
+        positive_prompt = f"{model.prompt_prefix}{normalized_prompt}".strip()
 
     try:
         image_bytes = await generate_image(
