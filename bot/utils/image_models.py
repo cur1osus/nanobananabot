@@ -105,39 +105,35 @@ OTHER_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
 # от проприетарных FLUX.2 Max/Pro (те всегда возвращали "Request Moderated").
 # AIR-идентификаторы проверены через Runware Model Search и доступны нашему ключу.
 
-# Pony требует свой синтаксис: без score-тегов генерит мусор.
+# Pony-модели используют booru-стиль: без score-тегов в начале промпта генерят мусор.
+# Префикс добавляется автоматически — пользователю писать score_* не нужно.
 _PONY_PREFIX: Final[str] = "score_9, score_8_up, score_7_up, rating_explicit, "
 _PONY_NEGATIVE: Final[str] = (
     "score_6, score_5, score_4, censored, mosaic censoring, bar censor, clothed, "
-    "worst quality, low quality, blurry, deformed, bad anatomy, extra limbs, "
-    "extra fingers, watermark, text, signature"
-)
-_REALISTIC_NEGATIVE: Final[str] = (
-    "censored, mosaic, bar censor, clothed, lingerie, worst quality, low quality, "
-    "blurry, jpeg artifacts, deformed, bad anatomy, extra fingers, mutated hands, "
-    "watermark, text, signature, cartoon, anime, 3d render, doll, plastic skin"
+    "worst quality, low quality, blurry, jpeg artifacts, deformed, bad anatomy, "
+    "extra limbs, extra fingers, mutated hands, watermark, text, signature"
 )
 
 ADULT_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
     ImageModelOption(
-        key="adult_juggernaut",
-        title="Juggernaut XL 18+",
-        api_model="civitai:133005@782002",
-        create_api_model="civitai:133005@782002",
+        key="adult_pony_realism",
+        title="Pony Realism 18+",
+        api_model="civitai:553979@778324",
+        create_api_model="civitai:553979@778324",
         cost=4,
         details="фотореализм, без цензуры",
-        button_label="Juggernaut XL 18+ (4 ген)",
+        button_label="Pony Realism 18+ (4 ген)",
         provider="runware",
-        negative_prompt=_REALISTIC_NEGATIVE,
+        prompt_prefix=_PONY_PREFIX,
+        negative_prompt=_PONY_NEGATIVE,
         img2img_mode="seed",
-        steps=32,
-        cfg_scale=5.0,
+        steps=30,
+        cfg_scale=7.0,
     ),
     ImageModelOption(
-        # V6 Turbo DPO merge — базовый V6 (@290640) недоступен нашему ключу (failedModelLoad).
-        # Turbo-вариант рассчитан на малое число шагов и низкий CFG.
+        # V6 Turbo DPO merge — базовая V6 (@290640) недоступна нашему ключу (failedModelLoad).
         key="adult_pony",
-        title="Pony Diffusion V6 18+",
+        title="Pony V6 18+",
         api_model="civitai:257749@298112",
         create_api_model="civitai:257749@298112",
         cost=3,
@@ -147,8 +143,8 @@ ADULT_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
         prompt_prefix=_PONY_PREFIX,
         negative_prompt=_PONY_NEGATIVE,
         img2img_mode="seed",
-        steps=12,
-        cfg_scale=3.0,
+        steps=28,
+        cfg_scale=6.0,
     ),
 )
 
@@ -157,7 +153,7 @@ ALL_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
 )
 
 DEFAULT_IMAGE_MODEL_KEY: Final[str] = "standard"
-DEFAULT_ADULT_IMAGE_MODEL_KEY: Final[str] = "adult_juggernaut"
+DEFAULT_ADULT_IMAGE_MODEL_KEY: Final[str] = "adult_pony_realism"
 
 
 def get_image_model(key: str) -> ImageModelOption:
