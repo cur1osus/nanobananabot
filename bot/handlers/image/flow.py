@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.db.func import deduct_user_credits
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import (
+    AdultPreset,
     CreateAspectRatio,
     ImageNav,
     ImageResultAction,
@@ -22,6 +23,7 @@ from bot.keyboards.factories import (
     ModelSelect,
 )
 from bot.keyboards.inline import (
+    ik_adult_create_prompt,
     ik_back_home,
     ik_create_aspect_ratio,
     ik_create_prompt_nav,
@@ -33,6 +35,11 @@ from bot.keyboards.inline import (
     ik_prompt_nav,
 )
 from bot.states import BaseUserState, ImageGenerationState
+from bot.utils.adult_presets import (
+    ADULT_PRESETS,
+    build_preset_prompt,
+    get_adult_preset,
+)
 from bot.utils.translate import translate_prompt_to_english
 from bot.utils.image_models import (
     DEFAULT_IMAGE_MODEL_KEY,
@@ -736,7 +743,7 @@ async def select_create_aspect_ratio(
         await query.answer("Неизвестное соотношение", show_alert=True)
         return
 
-    await update_image_data(
+    data = await update_image_data(
         state,
         photos=[],
         prompt="",
@@ -745,11 +752,11 @@ async def select_create_aspect_ratio(
     )
     await state.set_state(ImageGenerationState.waiting_create_prompt)
     await query.answer()
-    await edit_or_answer(
-        query,
-        text=CREATE_PROMPT_TEXT,
-        reply_markup=await ik_create_prompt_nav(),
-    )
+    if is_adult_model_key(data.model_key) and ADULT_PRESETS:
+        markup = await ik_adult_create_prompt()
+    else:
+        markup = await ik_create_prompt_nav()
+    await edit_or_answer(query, text=CREATE_PROMPT_TEXT, reply_markup=markup)
 
 
 @router.message(ImageGenerationState.waiting_create_prompt, F.photo)
@@ -794,6 +801,31 @@ async def quick_start_from_photo(
         PROMPT_REQUEST_TEXT,
         reply_markup=await ik_prompt_nav(),
     )
+
+
+@router.callback_query(AdultPreset.filter())
+async def use_adult_preset(
+    query: CallbackQuery,
+    callback_data: AdultPreset,
+    state: FSMContext,
+    user: UserRD,
+    session: AsyncSession,
+    redis: Redis,
+) -> None:
+    preset = get_adult_preset(callback_data.index)
+    if preset is None:
+        await query.answer("Пресет недоступен", show_alert=True)
+        return
+    await query.answer()
+    if isinstance(query.message, Message):
+        await _run_create_generation(
+            message=query.message,
+            state=state,
+            user=user,
+            session=session,
+            redis=redis,
+            prompt=build_preset_prompt(preset),
+        )
 
 
 @router.message(ImageGenerationState.waiting_create_prompt, F.text)

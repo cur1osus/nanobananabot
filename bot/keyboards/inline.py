@@ -4,6 +4,7 @@ from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.keyboards.factories import (
+    AdultPreset,
     CreateAspectRatio,
     ImageNav,
     ImageResultAction,
@@ -19,6 +20,7 @@ from bot.keyboards.factories import (
     VideoSetting,
     WithdrawAction,
 )
+from bot.utils.adult_presets import ADULT_PRESETS
 from bot.utils.image_models import (
     ADULT_IMAGE_MODELS,
     ALL_IMAGE_MODELS,
@@ -192,6 +194,23 @@ async def ik_prompt_nav() -> InlineKeyboardMarkup:
     builder.button(
         text="↩️ Назад",
         callback_data=ImageNav(action="to_photos").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_adult_create_prompt() -> InlineKeyboardMarkup:
+    """Экран ввода промпта 18+: готовые пресеты + ручной ввод."""
+    builder = InlineKeyboardBuilder()
+    for i, (label, _) in enumerate(ADULT_PRESETS):
+        builder.button(text=label, callback_data=AdultPreset(index=i).pack())
+    builder.button(
+        text="🔙 К выбору формата",
+        callback_data=ImageNav(action="to_create_aspect").pack(),
+    )
+    builder.button(
+        text="🏠 В главное меню",
+        callback_data=MenuAction(action="home").pack(),
     )
     builder.adjust(1)
     return builder.as_markup()

@@ -29,6 +29,10 @@ class ImageNav(CallbackData, prefix="image_nav"):
     action: str
 
 
+class AdultPreset(CallbackData, prefix="adult_preset"):
+    index: int
+
+
 class MusicBack(CallbackData, prefix="music_back"):
     target: str
 
