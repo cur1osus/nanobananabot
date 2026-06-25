@@ -66,6 +66,28 @@ class ImageBackendSettings:
         )
 
 
+class ProdiaSettings:
+    def __init__(self) -> None:
+        self.api_token = os.environ.get("PRODIA_API_TOKEN", "")
+        self.base_url = os.environ.get(
+            "PRODIA_BASE_URL",
+            "https://inference.prodia.com",
+        ).rstrip("/")
+        self.timeout = int(os.environ.get("PRODIA_TIMEOUT", 120))
+        self.total_timeout = max(
+            1,
+            int(os.environ.get("PRODIA_TOTAL_TIMEOUT", 180)),
+        )
+        self.rate_limit_retries = max(
+            0,
+            int(os.environ.get("PRODIA_RATE_LIMIT_RETRIES", 3)),
+        )
+        self.rate_limit_backoff = max(
+            0.0,
+            float(os.environ.get("PRODIA_RATE_LIMIT_BACKOFF", 2)),
+        )
+
+
 class SunoSettings:
     def __init__(self) -> None:
         self.api_key = os.environ.get("SUNO_API_KEY", "")
@@ -155,6 +177,7 @@ class Settings:
     db: DBSettings = DBSettings()
     redis: RedisSettings = RedisSettings()
     image_backend: ImageBackendSettings = ImageBackendSettings()
+    prodia: ProdiaSettings = ProdiaSettings()
     suno: SunoSettings = SunoSettings()
     agent_platform: AgentPlatformSettings = AgentPlatformSettings()
     vsegpt: VseGptSettings = VseGptSettings()

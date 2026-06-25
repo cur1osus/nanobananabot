@@ -196,11 +196,28 @@ async def generate_image(
     steps: int | None = None,
     cfg_scale: float | None = None,
 ) -> bytes:
-    """Generate image via Runware.
+    """Generate image via the configured provider.
 
-    ``reference_images`` are raw image bytes, encoded as base64 data URLs.
+    ``reference_images`` are raw image bytes. For Runware they are encoded as
+    base64 data URLs; for Prodia they are sent as multipart input parts.
     """
-    del photo_ids, provider
+    del photo_ids
+
+    if provider == "prodia":
+        model_id = model or se.image_backend.model
+        width, height = _aspect_ratio_to_dims(aspect_ratio, model_id)
+        from bot.utils.prodia_api import generate_image_prodia
+
+        return await generate_image_prodia(
+            model_id=model_id,
+            prompt=prompt,
+            reference_images=reference_images,
+            width=width,
+            height=height,
+            output_format=output_format,
+            steps=steps,
+            guidance_scale=cfg_scale,
+        )
 
     if se.image_backend.provider != "runware":
         raise ImageGenerationError(

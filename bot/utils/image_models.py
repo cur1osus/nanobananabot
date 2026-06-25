@@ -146,31 +146,31 @@ ADULT_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
         steps=28,
         cfg_scale=6.0,
     ),
-    # FLUX.2 (distilled) — естественный язык, без score-тегов и negative prompt.
-    # img2img у FLUX идёт через referenceImages (Kontext-style), seedImage не поддерживается,
-    # поэтому оставляем дефолтный режим "reference".
+    # FLUX.2 через Prodia (open-weights dev/klein) — естественный язык, без score-тегов.
+    # В отличие от Runware-версий, у Prodia нет выходной модерации и доступны
+    # steps/guidance_scale. img2img/txt2img — раздельные job-типы.
     ImageModelOption(
         key="adult_flux_klein",
         title="FLUX.2 Klein 18+",
-        api_model="runware:400@2",
-        create_api_model="runware:400@2",
+        api_model="inference.flux-2.klein.9b.img2img.v1",
+        create_api_model="inference.flux-2.klein.9b.txt2img.v1",
         cost=2,
         details="FLUX, быстро",
         button_label="FLUX.2 Klein 18+ (2 ген)",
-        provider="runware",
-        steps=8,
+        provider="prodia",
+        steps=4,  # klein distilled: 1-4 шага
     ),
     ImageModelOption(
         key="adult_flux_dev",
         title="FLUX.2 Dev 18+",
-        api_model="runware:400@1",
-        create_api_model="runware:400@1",
+        api_model="inference.flux-2.dev.img2img.v1",
+        create_api_model="inference.flux-2.dev.txt2img.v1",
         cost=3,
         details="FLUX, качество",
         button_label="FLUX.2 Dev 18+ (3 ген)",
-        provider="runware",
-        steps=24,
-        cfg_scale=3.0,
+        provider="prodia",
+        steps=28,  # dev: 1-50 (default 28)
+        cfg_scale=4.0,  # guidance_scale 1-10 (default 4)
     ),
 )
 
