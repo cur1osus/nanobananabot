@@ -33,7 +33,7 @@ from bot.keyboards.inline import (
     ik_prompt_nav,
 )
 from bot.states import BaseUserState, ImageGenerationState
-from bot.utils.agent_platform import translate_prompt_to_english
+from bot.utils.translate import translate_prompt_to_english
 from bot.utils.image_models import (
     DEFAULT_IMAGE_MODEL_KEY,
     get_image_model,
