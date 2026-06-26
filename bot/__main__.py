@@ -31,6 +31,8 @@ from bot.middlewares.throw_user_model import ThrowUserMiddleware
 from bot.scheduler import default_scheduler as scheduler
 from bot.scheduler import logger as scheduler_logger
 from bot.settings import Settings, se
+from bot.utils.billing import recover_orphan_generations
+from bot.utils.http import close_http_session
 from bot.utils.texts import BOT_DESCRIPTION_TEXT, BOT_INFO_TEXT
 
 load_dotenv()
@@ -92,6 +94,11 @@ async def startup(dispatcher: Dispatcher, bot: Bot, se: Settings, redis: Redis) 
     engine, db_session = await create_db_session_pool(se)
     await init_db(engine)
 
+    try:
+        await recover_orphan_generations(sessionmaker=db_session, redis=redis)
+    except Exception:
+        logger.exception("Не удалось восстановить прерванные генерации при старте")
+
     dispatcher.workflow_data.update(
         {
             "sessionmaker": db_session,
@@ -117,6 +124,7 @@ async def startup(dispatcher: Dispatcher, bot: Bot, se: Settings, redis: Redis) 
 
 async def shutdown(dispatcher: Dispatcher) -> None:
     await dispatcher["db_session_closer"]()
+    await close_http_session()
     logger.info("Бот остановлен")
 
 
@@ -185,6 +193,7 @@ def _short_description_text() -> str:
 
 
 async def main() -> None:
+    se.validate_required()
     if not se.image_backend.api_key:
         logger.warning("IMAGE_BACKEND_API_KEY не задан. Бот запущен без внешнего API.")
     if not se.suno.api_key:

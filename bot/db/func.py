@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
-async def _create_user(*, user: User, session: AsyncSession) -> UserModel:
+async def create_user(*, user: User, session: AsyncSession) -> UserModel:
     if user.username:
         stmt = select(UserModel).where(
             eq(UserModel.username, user.username), ne(UserModel.user_id, user.id)
@@ -51,7 +51,7 @@ async def _create_user(*, user: User, session: AsyncSession) -> UserModel:
     return cast(UserModel, user_model)
 
 
-async def _get_user_model(
+async def get_user_model(
     *,
     db_pool: async_sessionmaker[AsyncSession],
     redis: Redis,
@@ -64,7 +64,7 @@ async def _get_user_model(
 
     async with db_pool() as session:
         async with session.begin():
-            user_model: UserModel = await _create_user(
+            user_model: UserModel = await create_user(
                 user=user,
                 session=session,
             )

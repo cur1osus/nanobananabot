@@ -458,10 +458,14 @@ async def ik_info_periods(selected: str) -> InlineKeyboardMarkup:
         callback_data=MenuAction(action="runware_account").pack(),
     )
     builder.button(
+        text="📢 Рассылка",
+        callback_data=MenuAction(action="broadcast").pack(),
+    )
+    builder.button(
         text=BACK_BUTTON_TEXT,
         callback_data=MenuAction(action="home").pack(),
     )
-    builder.adjust(3, 1, 1, 1)
+    builder.adjust(3, 1, 1, 1, 1)
     return builder.as_markup()
 
 

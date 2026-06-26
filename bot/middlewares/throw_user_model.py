@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from aiogram import BaseMiddleware
 
-from bot.db.func import _get_user_model
+from bot.db.func import get_user_model
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -31,7 +31,7 @@ class ThrowUserMiddleware(BaseMiddleware):
         match event.event_type:
             case "message":
                 if user.is_bot is False and user.id != TG_SERVICE_USER_ID:
-                    user_model = await _get_user_model(
+                    user_model = await get_user_model(
                         db_pool=data["sessionmaker"],
                         redis=data["redis"],
                         user=user,
@@ -40,7 +40,7 @@ class ThrowUserMiddleware(BaseMiddleware):
                     data["user"] = user_model
             case "callback_query":
                 if user.is_bot is False and user.id != TG_SERVICE_USER_ID:
-                    user_model = await _get_user_model(
+                    user_model = await get_user_model(
                         db_pool=data["sessionmaker"],
                         redis=data["redis"],
                         user=user,

@@ -11,7 +11,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db.func import deduct_user_credits
+from bot.db.enum import GenerationKind
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import (
     CreateAspectRatio,
@@ -40,6 +40,7 @@ from bot.utils.image_models import (
     is_image_model_key,
 )
 from bot.utils.image_state import get_image_data, update_image_data
+from bot.utils.http import get_http_session
 from bot.utils.image_tasks import (
     ImageGenerationError,
     ImageGenerationTimeoutError,
@@ -47,6 +48,11 @@ from bot.utils.image_tasks import (
     generate_image,
 )
 from bot.utils.admin_notify import notify_admins_error
+from bot.utils.billing import (
+    CreditsExhausted,
+    GenerationBusy,
+    reserve_generation,
+)
 from bot.utils.messaging import edit_or_answer
 from bot.utils.speech_recognition import (
     SpeechRecognitionError,
@@ -84,7 +90,6 @@ CREATE_RATIO_MAP: dict[str, str] = {
 }
 
 
-
 def _photo_limit_for_model(model_key: str) -> int:
     if model_key == "gpt_image_2":
         return GPT_IMAGE_2_MAX_REFERENCES
@@ -101,13 +106,15 @@ def _photo_request_text(model_key: str) -> str:
 async def _download_telegram_file(bot_token: str, file_path: str) -> bytes:
     url = f"https://api.telegram.org/file/bot{bot_token}/{file_path}"
     timeout = aiohttp.ClientTimeout(total=60)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url) as response:
-            response.raise_for_status()
-            return await response.read()
+    session = get_http_session()
+    async with session.get(url, timeout=timeout) as response:
+        response.raise_for_status()
+        return await response.read()
 
 
-async def _build_reference_images(message: Message, photo_ids: list[str]) -> list[bytes]:
+async def _build_reference_images(
+    message: Message, photo_ids: list[str]
+) -> list[bytes]:
     bot = message.bot
     if bot is None:
         return []
@@ -221,33 +228,34 @@ async def _run_image_generation(
     positive_prompt = f"{model.prompt_prefix}{normalized_prompt}".strip()
 
     try:
-        reference_images = await _build_reference_images(message, data.photos)
-        image_bytes = await generate_image(
-            prompt=positive_prompt,
-            model=model.api_model,
-            provider=model.provider,
-            reference_images=reference_images,
-            aspect_ratio=data.aspect_ratio,
-            output_format="jpeg",
-            negative_prompt=model.negative_prompt or None,
-            img2img_mode=model.img2img_mode,
-            steps=model.steps,
-            cfg_scale=model.cfg_scale,
-        )
-        await deduct_user_credits(
+        async with reserve_generation(
             session=session,
             redis=redis,
-            user_id=user.user_id,
-            amount=model.cost,
-        )
-        await _send_generation_result(
-            message,
-            image_bytes=image_bytes,
-            model_key=data.model_key,
-            model_title=model.title,
-            model_cost=model.cost,
-            task_id=task_id,
-        )
+            user=user,
+            cost=model.cost,
+            kind=GenerationKind.IMAGE_EDIT.value,
+        ):
+            reference_images = await _build_reference_images(message, data.photos)
+            image_bytes = await generate_image(
+                prompt=positive_prompt,
+                model=model.api_model,
+                provider=model.provider,
+                reference_images=reference_images,
+                aspect_ratio=data.aspect_ratio,
+                output_format="jpeg",
+                negative_prompt=model.negative_prompt or None,
+                img2img_mode=model.img2img_mode,
+                steps=model.steps,
+                cfg_scale=model.cfg_scale,
+            )
+            await _send_generation_result(
+                message,
+                image_bytes=image_bytes,
+                model_key=data.model_key,
+                model_title=model.title,
+                model_cost=model.cost,
+                task_id=task_id,
+            )
         await update_image_data(
             state,
             prompt=normalized_prompt,
@@ -255,6 +263,14 @@ async def _run_image_generation(
         )
         await state.set_state(ImageGenerationState.waiting_prompt)
         await status_msg.delete()
+    except GenerationBusy:
+        await status_msg.edit_text(
+            "⏳ Предыдущая генерация ещё выполняется. Дождитесь результата и попробуйте снова."
+        )
+    except CreditsExhausted:
+        await status_msg.edit_text(
+            f"Недостаточно кредитов для генерации. Нужно: {model.cost}."
+        )
     except ImageGenerationError as e:
         logger.exception("Image generation API error")
         await status_msg.edit_text(_generation_error_text(e))
@@ -316,33 +332,34 @@ async def _run_create_generation(
     positive_prompt = f"{model.prompt_prefix}{normalized_prompt}".strip()
 
     try:
-        image_bytes = await generate_image(
-            prompt=positive_prompt,
-            model=model.create_api_model,
-            provider=model.provider,
-            reference_images=None,
-            aspect_ratio=data.aspect_ratio,
-            output_format="jpeg",
-            negative_prompt=model.negative_prompt or None,
-            img2img_mode=model.img2img_mode,
-            steps=model.steps,
-            cfg_scale=model.cfg_scale,
-        )
-        await deduct_user_credits(
+        async with reserve_generation(
             session=session,
             redis=redis,
-            user_id=user.user_id,
-            amount=model.cost,
-        )
-        await _send_generation_result(
-            message,
-            image_bytes=image_bytes,
-            model_key=data.model_key,
-            model_title=model.title,
-            model_cost=model.cost,
-            task_id=task_id,
-            show_result_actions=False,
-        )
+            user=user,
+            cost=model.cost,
+            kind=GenerationKind.IMAGE_CREATE.value,
+        ):
+            image_bytes = await generate_image(
+                prompt=positive_prompt,
+                model=model.create_api_model,
+                provider=model.provider,
+                reference_images=None,
+                aspect_ratio=data.aspect_ratio,
+                output_format="jpeg",
+                negative_prompt=model.negative_prompt or None,
+                img2img_mode=model.img2img_mode,
+                steps=model.steps,
+                cfg_scale=model.cfg_scale,
+            )
+            await _send_generation_result(
+                message,
+                image_bytes=image_bytes,
+                model_key=data.model_key,
+                model_title=model.title,
+                model_cost=model.cost,
+                task_id=task_id,
+                show_result_actions=False,
+            )
         await update_image_data(
             state,
             prompt=normalized_prompt,
@@ -351,6 +368,14 @@ async def _run_create_generation(
         )
         await state.set_state(ImageGenerationState.waiting_create_prompt)
         await status_msg.delete()
+    except GenerationBusy:
+        await status_msg.edit_text(
+            "⏳ Предыдущая генерация ещё выполняется. Дождитесь результата и попробуйте снова."
+        )
+    except CreditsExhausted:
+        await status_msg.edit_text(
+            f"Недостаточно кредитов для генерации. Нужно: {model.cost}."
+        )
     except ImageGenerationError as e:
         logger.exception("Create image API error")
         await status_msg.edit_text(_generation_error_text(e))
@@ -597,8 +622,16 @@ async def handle_result_actions(
 
 @router.message(ImageGenerationState.waiting_photos, F.photo)
 @router.message(ImageGenerationState.waiting_prompt, F.photo)
-@router.message(ImageGenerationState.waiting_photos, F.document, F.document.mime_type.startswith("image/"))
-@router.message(ImageGenerationState.waiting_prompt, F.document, F.document.mime_type.startswith("image/"))
+@router.message(
+    ImageGenerationState.waiting_photos,
+    F.document,
+    F.document.mime_type.startswith("image/"),
+)
+@router.message(
+    ImageGenerationState.waiting_prompt,
+    F.document,
+    F.document.mime_type.startswith("image/"),
+)
 async def collect_photos(
     message: Message,
     state: FSMContext,
@@ -758,7 +791,11 @@ async def select_create_aspect_ratio(
 
 
 @router.message(ImageGenerationState.waiting_create_prompt, F.photo)
-@router.message(ImageGenerationState.waiting_create_prompt, F.document, F.document.mime_type.startswith("image/"))
+@router.message(
+    ImageGenerationState.waiting_create_prompt,
+    F.document,
+    F.document.mime_type.startswith("image/"),
+)
 async def remind_create_prompt_photo(message: Message) -> None:
     await message.answer(
         "В режиме создания фото не нужны. Пришлите только текстовый промпт.",
@@ -767,7 +804,11 @@ async def remind_create_prompt_photo(message: Message) -> None:
 
 
 @router.message(StateFilter(None, BaseUserState.main), F.photo)
-@router.message(StateFilter(None, BaseUserState.main), F.document, F.document.mime_type.startswith("image/"))
+@router.message(
+    StateFilter(None, BaseUserState.main),
+    F.document,
+    F.document.mime_type.startswith("image/"),
+)
 async def quick_start_from_photo(
     message: Message,
     state: FSMContext,

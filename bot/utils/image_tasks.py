@@ -8,6 +8,7 @@ import aiohttp
 from runware import IImageInference, Runware
 
 from bot.settings import se
+from bot.utils.http import get_http_session
 
 logger = logging.getLogger(__name__)
 
@@ -109,8 +110,14 @@ class ImageGenerationTimeoutError(ImageGenerationError):
     """Raised when image generation request times out after retries."""
 
 
-def _aspect_ratio_to_dims(aspect_ratio: str, model_id: str | None = None) -> tuple[int, int]:
-    dims = _MODEL_DIMS.get(model_id or "", ASPECT_RATIO_DIMS) if model_id else ASPECT_RATIO_DIMS
+def _aspect_ratio_to_dims(
+    aspect_ratio: str, model_id: str | None = None
+) -> tuple[int, int]:
+    dims = (
+        _MODEL_DIMS.get(model_id or "", ASPECT_RATIO_DIMS)
+        if model_id
+        else ASPECT_RATIO_DIMS
+    )
     return dims.get(aspect_ratio, dims["1:1"])
 
 
@@ -119,7 +126,9 @@ def closest_aspect_ratio(width: int, height: int) -> str:
         return "1:1"
     target = width / height
     candidates = {k: v for k, v in ASPECT_RATIO_DIMS.items() if k != "auto"}
-    return min(candidates, key=lambda k: abs(candidates[k][0] / candidates[k][1] - target))
+    return min(
+        candidates, key=lambda k: abs(candidates[k][0] / candidates[k][1] - target)
+    )
 
 
 def _build_image_inference_request(
@@ -169,13 +178,13 @@ def _build_image_inference_request(
 
 async def _download_image(url: str, *, timeout: int) -> bytes:
     request_timeout = aiohttp.ClientTimeout(total=timeout)
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=request_timeout) as response:
-            if response.status >= 400:
-                raise ImageGenerationError(
-                    f"Не удалось скачать изображение Runware ({response.status})"
-                )
-            return await response.read()
+    session = get_http_session()
+    async with session.get(url, timeout=request_timeout) as response:
+        if response.status >= 400:
+            raise ImageGenerationError(
+                f"Не удалось скачать изображение Runware ({response.status})"
+            )
+        return await response.read()
 
 
 def _bytes_to_data_url(image_bytes: bytes) -> str:
@@ -185,7 +194,6 @@ def _bytes_to_data_url(image_bytes: bytes) -> str:
 
 async def generate_image(
     prompt: str,
-    photo_ids: list[str] | None = None,
     model: str | None = None,
     provider: str = "runware",
     reference_images: list[bytes] | None = None,
@@ -201,8 +209,6 @@ async def generate_image(
     ``reference_images`` are raw image bytes. For Runware they are encoded as
     base64 data URLs; for Prodia they are sent as multipart input parts.
     """
-    del photo_ids
-
     if provider == "prodia":
         model_id = model or se.image_backend.model
         width, height = _aspect_ratio_to_dims(aspect_ratio, model_id)
@@ -276,11 +282,16 @@ async def generate_image(
                             logger.warning(
                                 "Runware failedModelLoad (model=%s), retry in %.0fs "
                                 "(attempt %d/%d)",
-                                model_id, delay, attempt + 1, max_attempts,
+                                model_id,
+                                delay,
+                                attempt + 1,
+                                max_attempts,
                             )
                             await asyncio.sleep(delay)
                             continue
-                        raise ImageGenerationError(f"Ошибка Runware SDK: {exc}") from exc
+                        raise ImageGenerationError(
+                            f"Ошибка Runware SDK: {exc}"
+                        ) from exc
 
                 if not images:
                     raise ImageGenerationError(

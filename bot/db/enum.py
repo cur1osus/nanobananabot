@@ -34,3 +34,16 @@ class MusicTaskStatus(str, enum.Enum):
     SUCCESS = "success"
     ERROR = "error"
     TIMEOUT = "timeout"
+
+
+class GenerationKind(str, enum.Enum):
+    IMAGE_EDIT = "image_edit"
+    IMAGE_CREATE = "image_create"
+    VIDEO = "video"
+
+
+class GenerationTaskStatus(str, enum.Enum):
+    PROCESSING = "processing"
+    SUCCESS = "success"
+    ERROR = "error"
+    REFUNDED = "refunded"

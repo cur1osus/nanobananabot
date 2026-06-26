@@ -8,6 +8,7 @@ from bot.settings import se
 from bot.utils.image_tasks import (
     ASPECT_RATIO_DIMS,
     ImageGenerationTimeoutError,
+    _bytes_to_data_url,
     generate_image,
 )
 
@@ -89,15 +90,16 @@ async def test_input_reference_models_send_reference_images_inside_inputs(
     result = await generate_image(
         prompt="test",
         model=model,
-        reference_images=["image-uuid"],
+        reference_images=[b"image-ref-bytes"],
     )
 
+    expected_ref = _bytes_to_data_url(b"image-ref-bytes")
     assert result == b"image-bytes"
     assert len(captured_requests) == 1
     request = captured_requests[0]
     assert request.referenceImages == []
     assert request.inputs is not None
-    assert request.inputs.referenceImages == ["image-uuid"]
+    assert request.inputs.referenceImages == [expected_ref]
 
 
 async def test_wan27_uses_dimensions_with_documented_minimums(monkeypatch) -> None:
@@ -172,11 +174,12 @@ async def test_default_models_keep_top_level_reference_images(monkeypatch) -> No
     result = await generate_image(
         prompt="test",
         model="google:4@1",
-        reference_images=["image-uuid"],
+        reference_images=[b"image-ref-bytes"],
     )
 
+    expected_ref = _bytes_to_data_url(b"image-ref-bytes")
     assert result == b"image-bytes"
     assert len(captured_requests) == 1
     request = captured_requests[0]
-    assert request.referenceImages == ["image-uuid"]
+    assert request.referenceImages == [expected_ref]
     assert request.inputs is None

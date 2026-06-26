@@ -14,6 +14,7 @@ from runware import (
 )
 
 from bot.settings import se
+from bot.utils.http import get_http_session
 from bot.utils.video_models import VIDEO_RATIO_DIMS
 
 logger = logging.getLogger(__name__)
@@ -52,13 +53,13 @@ class VideoGenerationTimeoutError(VideoGenerationError):
 
 async def _download_video(url: str, *, timeout: int = 300) -> bytes:
     request_timeout = aiohttp.ClientTimeout(total=timeout)
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=request_timeout) as response:
-            if response.status >= 400:
-                raise VideoGenerationError(
-                    f"Не удалось скачать видео Runware ({response.status})"
-                )
-            return await response.read()
+    session = get_http_session()
+    async with session.get(url, timeout=request_timeout) as response:
+        if response.status >= 400:
+            raise VideoGenerationError(
+                f"Не удалось скачать видео Runware ({response.status})"
+            )
+        return await response.read()
 
 
 async def generate_video(

@@ -41,3 +41,8 @@ class MusicGenerationState(StatesGroup):
 
 class SpeechTestState(StatesGroup):
     waiting = State()
+
+
+class BroadcastState(StatesGroup):
+    waiting_message = State()
+    confirm = State()

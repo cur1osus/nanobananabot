@@ -6,6 +6,7 @@ from aiogram import F, Router
 from aiogram.types import Message, PreCheckoutQuery, SuccessfulPayment
 from redis.asyncio import Redis
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db.enum import TransactionStatus, TransactionType
@@ -98,13 +99,11 @@ async def successful_payment(
         )
         return
 
-    await add_user_credits(
-        session=session,
-        redis=redis,
-        user=user,
-        amount=tariff.credits,
-    )
-
+    # Идемпотентность: Telegram может повторно доставить successful_payment при
+    # сетевых сбоях. Сначала фиксируем транзакцию — уникальный индекс по
+    # telegram_charge_id атомарно гарантирует ровно одно начисление, даже при
+    # одновременной повторной доставке. Кредиты начисляем только после успешной
+    # записи.
     transaction = TransactionModel(
         user_idpk=user.id,
         type=TransactionType.TOPUP.value,
@@ -121,14 +120,30 @@ async def successful_payment(
     try:
         session.add(transaction)
         await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        logger.info(
+            "Повторная доставка платежа %s — начисление пропущено",
+            payment.telegram_payment_charge_id,
+        )
+        await message.answer(
+            f"Этот платёж уже зачислен ранее ({tariff.credits} кредитов)."
+        )
+        return
     except Exception as err:
         await session.rollback()
         logger.warning("Не удалось сохранить транзакцию: %s", err)
         await message.answer(
-            "Оплата прошла, кредиты начислены, но транзакция не сохранена. "
-            "Напишите в поддержку."
+            "Не удалось обработать платёж. Если кредиты не начислены, напишите в поддержку."
         )
         return
+
+    await add_user_credits(
+        session=session,
+        redis=redis,
+        user=user,
+        amount=tariff.credits,
+    )
 
     await _apply_referral_bonus(
         session=session,

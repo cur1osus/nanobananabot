@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from bot.db.enum import MusicTaskStatus
 from bot.db.models import MusicTaskModel
 from bot.scheduler import default_scheduler
-from bot.utils.background_task_helpers import _refund_credits, _send_tracks
+from bot.utils.background_task_helpers import refund_task_credits, send_tracks
 from bot.utils.suno_api import SunoAPIError, build_suno_client
 
 if TYPE_CHECKING:
@@ -174,7 +174,7 @@ async def _poll_single_task(
     status = str(data.get("status") or "").upper()
 
     if status == "SUCCESS":
-        file_ids = await _send_tracks(bot, task.chat_id, task.filename_base, data)
+        file_ids = await send_tracks(bot, task.chat_id, task.filename_base, data)
         task.status = MusicTaskStatus.SUCCESS.value
         if file_ids and not task.audio_file_ids:
             task.audio_file_ids = json.dumps(file_ids, ensure_ascii=False)
@@ -221,7 +221,7 @@ async def _handle_timeout(
 ) -> None:
     task.status = MusicTaskStatus.TIMEOUT.value
     await session.commit()
-    await _refund_credits(
+    await refund_task_credits(
         sessionmaker=sessionmaker,
         redis=redis,
         user_id=user_id,
@@ -242,7 +242,7 @@ async def _handle_error(
 ) -> None:
     task.status = MusicTaskStatus.ERROR.value
     await session.commit()
-    await _refund_credits(
+    await refund_task_credits(
         sessionmaker=sessionmaker,
         redis=redis,
         user_id=user_id,

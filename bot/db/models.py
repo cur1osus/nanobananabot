@@ -4,7 +4,13 @@ from sqlalchemy import BigInteger, Boolean, ForeignKey, String, Text, func
 from sqlalchemy.dialects.mysql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from bot.db.enum import MusicTaskStatus, TransactionStatus, TransactionType, UserRole
+from bot.db.enum import (
+    GenerationTaskStatus,
+    MusicTaskStatus,
+    TransactionStatus,
+    TransactionType,
+    UserRole,
+)
 
 from .base import Base
 
@@ -66,7 +72,9 @@ class TransactionModel(Base):
         default=TransactionStatus.SUCCESS.value,
     )
     payload: Mapped[str] = mapped_column(String(200))
-    telegram_charge_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    telegram_charge_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True, unique=True
+    )
     provider_charge_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     details: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -123,3 +131,30 @@ class MusicTaskModel(Base):
     )
 
     user: Mapped[UserModel] = relationship(back_populates="music_tasks")
+
+
+class GenerationTaskModel(Base):
+    """Учёт синхронных генераций (фото/видео) для гарантии возврата кредитов.
+
+    Запись создаётся в статусе ``processing`` сразу после атомарного списания
+    кредитов и переводится в ``success`` после доставки результата либо
+    ``refunded`` при ошибке. Незавершённые при рестарте записи возвращаются
+    пользователю на старте бота (см. recover_orphan_generations)."""
+
+    __tablename__ = "generation_tasks"
+
+    user_idpk: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(30))
+    credits_cost: Mapped[int] = mapped_column(default=0)
+    status: Mapped[str] = mapped_column(
+        String(30), default=GenerationTaskStatus.PROCESSING.value, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP,
+        server_default=func.current_timestamp(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )

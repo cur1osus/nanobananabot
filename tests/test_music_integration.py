@@ -4,7 +4,7 @@ from typing import Any
 
 from bot.handlers.menu.tracks import _extract_tracks
 from bot.keyboards.inline import ik_main
-from bot.utils.background_task_helpers import _send_tracks
+from bot.utils.background_task_helpers import send_tracks
 from bot.utils.suno_api import SunoClient
 
 
@@ -41,7 +41,7 @@ async def test_send_tracks_without_tracks_returns_empty_list() -> None:
 
     bot = FakeBot()
 
-    file_ids = await _send_tracks(
+    file_ids = await send_tracks(
         bot,
         chat_id=123,
         filename_base="empty",

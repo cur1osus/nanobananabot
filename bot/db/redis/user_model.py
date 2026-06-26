@@ -12,6 +12,10 @@ from bot.utils.alchemy_struct import AlchemyStruct
 
 ENCODER: Final[msgspec.msgpack.Encoder] = msgspec.msgpack.Encoder()
 
+# Sorted set: member = user_id, score = unix-время последней активности.
+# Позволяет считать онлайн через ZCOUNT за O(log N) без сканирования ключей.
+ACTIVE_ZSET_KEY: Final[str] = "users:active"
+
 
 class UserRD(msgspec.Struct, AlchemyStruct["UserRD"], kw_only=True, array_like=True):
     id: int
@@ -48,8 +52,10 @@ class UserRD(msgspec.Struct, AlchemyStruct["UserRD"], kw_only=True, array_like=T
 
     async def update_last_active(self, redis: Redis) -> None:
         """Update last_active timestamp and save to Redis."""
-        self.last_active = datetime.now()
+        now = datetime.now()
+        self.last_active = now
         await self.save(redis)
+        await redis.zadd(ACTIVE_ZSET_KEY, {str(self.user_id): now.timestamp()})
 
     @classmethod
     async def delete(cls, redis: Redis, user_id: int | str) -> int:
@@ -62,32 +68,10 @@ class UserRD(msgspec.Struct, AlchemyStruct["UserRD"], kw_only=True, array_like=T
 
     @classmethod
     async def count_online(cls, redis: Redis, threshold_minutes: int = 5) -> int:
+        """Count users active within the last ``threshold_minutes``.
+
+        Использует sorted set :data:`ACTIVE_ZSET_KEY` и ZCOUNT — O(log N) без
+        блокирующего ``KEYS``-сканирования всего пространства ключей.
         """
-        Count users who were active within the last threshold_minutes.
-
-        Args:
-            redis: Redis connection
-            threshold_minutes: Time window in minutes to consider user as online (default: 5)
-
-        Returns:
-            Number of online users
-        """
-        keys = await redis.keys(f"{cls.__name__}:*")
-        if not keys:
-            return 0
-
-        now = datetime.now()
-        threshold = timedelta(minutes=threshold_minutes)
-        online_count = 0
-
-        for key in keys:
-            data = await redis.get(key)
-            if data:
-                try:
-                    user = msgspec.msgpack.decode(data, type=cls)
-                    if now - user.last_active <= threshold:
-                        online_count += 1
-                except (msgspec.DecodeError, msgspec.ValidationError):
-                    continue
-
-        return online_count
+        cutoff = (datetime.now() - timedelta(minutes=threshold_minutes)).timestamp()
+        return int(await redis.zcount(ACTIVE_ZSET_KEY, cutoff, "+inf"))

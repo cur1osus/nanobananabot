@@ -11,7 +11,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db.func import deduct_user_credits
+from bot.db.enum import GenerationKind
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import VideoAspectRatio, VideoNav, VideoSetting
 from bot.keyboards.inline import (
@@ -21,9 +21,20 @@ from bot.keyboards.inline import (
 )
 from bot.states import VideoGenerationState
 from bot.utils.admin_notify import notify_admins_error
+from bot.utils.billing import (
+    CreditsExhausted,
+    GenerationBusy,
+    reserve_generation,
+)
+from bot.utils.http import get_http_session
 from bot.utils.messaging import edit_or_answer
 from bot.utils.video_models import VIDEO_RATIO_MAP, get_kling_model, video_cost
-from bot.utils.video_state import get_video_data, update_video_data, video_settings_text
+from bot.utils.video_state import (
+    VideoFlowData,
+    get_video_data,
+    update_video_data,
+    video_settings_text,
+)
 from bot.utils.video_tasks import (
     VideoGenerationError,
     VideoGenerationTimeoutError,
@@ -32,6 +43,16 @@ from bot.utils.video_tasks import (
 
 router = Router()
 logger = logging.getLogger(__name__)
+
+
+async def _settings_markup(data: VideoFlowData):
+    return await ik_video_settings(
+        model_key=data.model_key,
+        duration=data.duration,
+        aspect_ratio=data.aspect_ratio,
+        with_audio=data.with_audio,
+        has_image=bool(data.image_file_id),
+    )
 
 
 async def _open_settings(
@@ -43,13 +64,7 @@ async def _open_settings(
     await edit_or_answer(
         query,
         text=video_settings_text(data),
-        reply_markup=await ik_video_settings(
-            model_key=data.model_key,
-            duration=data.duration,
-            aspect_ratio=data.aspect_ratio,
-            with_audio=data.with_audio,
-            has_image=bool(data.image_file_id),
-        ),
+        reply_markup=await _settings_markup(data),
     )
 
 
@@ -87,13 +102,7 @@ async def handle_video_setting(
     await edit_or_answer(
         query,
         text=video_settings_text(data),
-        reply_markup=await ik_video_settings(
-            model_key=data.model_key,
-            duration=data.duration,
-            aspect_ratio=data.aspect_ratio,
-            with_audio=data.with_audio,
-            has_image=bool(data.image_file_id),
-        ),
+        reply_markup=await _settings_markup(data),
     )
 
 
@@ -149,13 +158,7 @@ async def collect_video_prompt(
     await state.set_state(VideoGenerationState.settings)
     await message.answer(
         video_settings_text(data),
-        reply_markup=await ik_video_settings(
-            model_key=data.model_key,
-            duration=data.duration,
-            aspect_ratio=data.aspect_ratio,
-            with_audio=data.with_audio,
-            has_image=bool(data.image_file_id),
-        ),
+        reply_markup=await _settings_markup(data),
     )
 
 
@@ -194,13 +197,7 @@ async def collect_video_image(
     await state.set_state(VideoGenerationState.settings)
     await message.answer(
         video_settings_text(data),
-        reply_markup=await ik_video_settings(
-            model_key=data.model_key,
-            duration=data.duration,
-            aspect_ratio=data.aspect_ratio,
-            with_audio=data.with_audio,
-            has_image=bool(data.image_file_id),
-        ),
+        reply_markup=await _settings_markup(data),
     )
 
 
@@ -259,9 +256,9 @@ async def start_video_generation(
                 bot_token = getattr(bot, "token", "")
                 url = f"https://api.telegram.org/file/bot{bot_token}/{file.file_path}"
                 timeout = aiohttp.ClientTimeout(total=60)
-                async with aiohttp.ClientSession(timeout=timeout) as http_session:
-                    async with http_session.get(url) as response:
-                        img_bytes = await response.read()
+                http_session = get_http_session()
+                async with http_session.get(url, timeout=timeout) as response:
+                    img_bytes = await response.read()
                 reference_image = "data:image/jpeg;base64," + base64.b64encode(
                     img_bytes
                 ).decode("ascii")
@@ -269,42 +266,49 @@ async def start_video_generation(
             logger.exception("Failed to prepare reference image for video")
 
     try:
-        video_bytes = await generate_video(
-            prompt=data.prompt.strip(),
-            runware_model=model.runware_model,
-            duration=data.duration,
-            aspect_ratio=data.aspect_ratio,
-            with_audio=data.with_audio,
-            reference_image=reference_image,
-            supports_duration=model.supports_duration,
-            supports_dimensions=model.supports_dimensions,
-            supports_sound=model.supports_sound,
-            ratio_dims=model.ratio_dims,
-            needs_provider_settings=model.needs_provider_settings,
-        )
-        await deduct_user_credits(
+        async with reserve_generation(
             session=session,
             redis=redis,
-            user_id=user.user_id,
-            amount=cost,
-        )
-        filename = f"video_{task_id}.mp4"
-        await query.message.answer_video(
-            video=BufferedInputFile(file=video_bytes, filename=filename),
-            caption=(
-                f"🎬 Готово!\n"
-                f"📹 Модель: {model.title}\n"
-                f"⏱ Длительность: {data.duration} сек.\n"
-                f"💰 Списано: {cost} кредитов"
-            ),
-            reply_markup=await ik_back_home(),
-        )
-        await query.message.answer_document(
-            document=BufferedInputFile(file=video_bytes, filename=filename),
-            caption="📥 Без сжатия",
-        )
+            user=user,
+            cost=cost,
+            kind=GenerationKind.VIDEO.value,
+        ):
+            video_bytes = await generate_video(
+                prompt=data.prompt.strip(),
+                runware_model=model.runware_model,
+                duration=data.duration,
+                aspect_ratio=data.aspect_ratio,
+                with_audio=data.with_audio,
+                reference_image=reference_image,
+                supports_duration=model.supports_duration,
+                supports_dimensions=model.supports_dimensions,
+                supports_sound=model.supports_sound,
+                ratio_dims=model.ratio_dims,
+                needs_provider_settings=model.needs_provider_settings,
+            )
+            filename = f"video_{task_id}.mp4"
+            await query.message.answer_video(
+                video=BufferedInputFile(file=video_bytes, filename=filename),
+                caption=(
+                    f"🎬 Готово!\n"
+                    f"📹 Модель: {model.title}\n"
+                    f"⏱ Длительность: {data.duration} сек.\n"
+                    f"💰 Списано: {cost} кредитов"
+                ),
+                reply_markup=await ik_back_home(),
+            )
+            await query.message.answer_document(
+                document=BufferedInputFile(file=video_bytes, filename=filename),
+                caption="📥 Без сжатия",
+            )
         await status_msg.delete()
 
+    except GenerationBusy:
+        await status_msg.edit_text(
+            "⏳ Предыдущая генерация ещё выполняется. Дождитесь результата и попробуйте снова."
+        )
+    except CreditsExhausted:
+        await status_msg.edit_text(f"Недостаточно кредитов. Нужно: {cost}.")
     except VideoGenerationTimeoutError:
         await status_msg.edit_text(
             "❌ Генерация видео заняла слишком много времени.\n\n"

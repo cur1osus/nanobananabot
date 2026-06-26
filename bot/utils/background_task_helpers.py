@@ -15,6 +15,7 @@ from sqlalchemy import select
 from bot.db.func import refund_user_credits
 from bot.db.models import UserModel
 from bot.db.redis.user_model import UserRD
+from bot.utils.http import get_http_session
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 FILENAME_LIMIT = 80
 
 
-async def _send_tracks(
+async def send_tracks(
     bot: Bot,
     chat_id: int,
     filename_base: str,
@@ -92,10 +93,10 @@ async def _send_tracks(
 
 async def _download_audio(url: str) -> bytes:
     timeout = aiohttp.ClientTimeout(total=60)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url) as response:
-            response.raise_for_status()
-            return await response.read()
+    session = get_http_session()
+    async with session.get(url, timeout=timeout) as response:
+        response.raise_for_status()
+        return await response.read()
 
 
 def _build_filename(base: str, index: int, total: int, url: str) -> str:
@@ -114,7 +115,7 @@ def _sanitize_filename(name: str) -> str:
     return cleaned
 
 
-async def _refund_credits(
+async def refund_task_credits(
     *,
     sessionmaker: async_sessionmaker[AsyncSession],
     redis: Redis,
