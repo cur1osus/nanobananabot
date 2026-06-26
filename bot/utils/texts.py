@@ -7,6 +7,11 @@ from datetime import datetime
 from bot.db.redis.user_model import UserRD
 from bot.settings import se
 from bot.utils.formatting import format_rub
+from bot.utils.image_models import (
+    DEFAULT_ADULT_IMAGE_MODEL_KEY,
+    format_generations,
+    get_image_model,
+)
 
 MAIN_MENU_TEXT = (
     "🏠 Главное меню\n💰 Ваш баланс: {credits} кредитов\n🖼 Что вы хотите сделать?"
@@ -295,9 +300,10 @@ ADULT_CONSENT_TEXT = (
 ADULT_MENU_TEXT = (
     "🔞 18+ генерация\n\n"
     "Выберите режим:\n"
-    "• <b>Создать по описанию</b> — модель рисует с нуля по тексту.\n"
-    "• <b>Редактировать фото</b> — пришлите фото, и модель переработает его.\n\n"
-    "Модель FLUX.2 Klein без цензуры."
+    "• <b>Создать по описанию</b> — генерация с нуля по тексту.\n"
+    "• <b>Редактировать фото</b> — пришлите фото, и оно будет переработано.\n\n"
+    "Без цензуры. Стоимость одной генерации: "
+    f"{format_generations(get_image_model(DEFAULT_ADULT_IMAGE_MODEL_KEY).cost)}."
 )
 
 WITHDRAW_TEXT = "Вывод средств пока недоступен. Мы сообщим, когда он заработает."

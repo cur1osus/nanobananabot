@@ -111,12 +111,12 @@ OTHER_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
 ADULT_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
     ImageModelOption(
         key="adult_flux_klein",
-        title="FLUX.2 Klein 18+",
+        title="Генерация 18+",
         api_model="inference.flux-2.klein.9b.img2img.v1",
         create_api_model="inference.flux-2.klein.9b.txt2img.v1",
-        cost=2,
+        cost=1,
         details="без цензуры",
-        button_label="FLUX.2 Klein 18+ (2 ген)",
+        button_label="Генерация 18+",
         provider="prodia",
     ),
 )
