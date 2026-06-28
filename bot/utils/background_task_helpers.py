@@ -18,12 +18,45 @@ from bot.db.redis.user_model import UserRD
 from bot.utils.http import get_http_session
 
 if TYPE_CHECKING:
+    from collections.abc import Coroutine
+
     from redis.asyncio import Redis
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
 FILENAME_LIMIT = 80
+
+# Event loop держит лишь СЛАБУЮ ссылку на задачи из create_task: без сильной
+# ссылки сборщик мусора может уничтожить ещё работающую задачу прямо на лету
+# (см. docs asyncio.create_task / ruff RUF006). Храним ссылки здесь и снимаем
+# их по завершении, чтобы фоновые задачи (планировщик, рассылки) жили до конца.
+_BACKGROUND_TASKS: set[asyncio.Task[Any]] = set()
+
+
+def spawn_background_task(
+    coro: Coroutine[Any, Any, Any], *, name: str | None = None
+) -> asyncio.Task[Any]:
+    """Запустить fire-and-forget задачу, удержав ссылку до её завершения.
+
+    Логирует необработанные исключения: иначе они молча тонут в задаче, на
+    которую никто не делает ``await``.
+    """
+    task = asyncio.create_task(coro, name=name)
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_on_background_task_done)
+    return task
+
+
+def _on_background_task_done(task: asyncio.Task[Any]) -> None:
+    _BACKGROUND_TASKS.discard(task)
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error(
+            "Фоновая задача %s завершилась с ошибкой", task.get_name(), exc_info=exc
+        )
 
 
 async def send_tracks(
@@ -49,7 +82,7 @@ async def send_tracks(
 
         try:
             audio_bytes = await _download_audio(audio_url)
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        except (TimeoutError, aiohttp.ClientError) as err:
             logger.warning("Не удалось скачать аудио %s: %s", audio_url, err)
             await bot.send_message(
                 chat_id,

@@ -43,6 +43,7 @@ class GenerationKind(str, enum.Enum):
 
 
 class GenerationTaskStatus(str, enum.Enum):
+    QUEUED = "queued"
     PROCESSING = "processing"
     SUCCESS = "success"
     ERROR = "error"

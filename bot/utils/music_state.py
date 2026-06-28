@@ -22,7 +22,7 @@ class MusicFlowData:
     prompt_after_title: bool = False
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "MusicFlowData":
+    def from_dict(cls, raw: dict[str, Any]) -> MusicFlowData:
         return cls(
             prompt_source=raw.get("prompt_source"),
             instrumental=bool(raw.get("instrumental", False)),

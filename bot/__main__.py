@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from asyncio import CancelledError
 from datetime import datetime
 from functools import partial
@@ -23,7 +24,11 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot import handlers
-from bot.background_tasks import schedule_music_polling
+from bot.background_tasks import (
+    schedule_generation_worker,
+    schedule_gift_expiry,
+    schedule_music_polling,
+)
 from bot.db.base import close_db, create_db_session_pool, init_db
 from bot.middlewares.metrics import MetricsMiddleware
 from bot.middlewares.throw_session import ThrowDBSessionMiddleware
@@ -31,6 +36,7 @@ from bot.middlewares.throw_user_model import ThrowUserMiddleware
 from bot.scheduler import default_scheduler as scheduler
 from bot.scheduler import logger as scheduler_logger
 from bot.settings import Settings, se
+from bot.utils.background_task_helpers import spawn_background_task
 from bot.utils.billing import recover_orphan_generations
 from bot.utils.http import close_http_session
 from bot.utils.texts import BOT_DESCRIPTION_TEXT, BOT_INFO_TEXT
@@ -41,8 +47,8 @@ MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 SHORT_DESCRIPTION_LIMIT = 120
 
 
-def _moscow_converter(timestamp: float) -> tuple:
-    return datetime.fromtimestamp(timestamp, MOSCOW_TZ).timetuple()
+def _moscow_converter(timestamp: float | None) -> time.struct_time:
+    return datetime.fromtimestamp(timestamp or 0, MOSCOW_TZ).timetuple()
 
 
 class MoscowFormatter(logging.Formatter):
@@ -61,8 +67,8 @@ def setup_logging() -> None:
         handler.setFormatter(formatter)
         root_logger.addHandler(handler)
     else:
-        for handler in root_logger.handlers:
-            handler.setFormatter(formatter)
+        for existing_handler in root_logger.handlers:
+            existing_handler.setFormatter(formatter)
 
 
 scheduler_logger.setLevel(logging.ERROR)
@@ -83,6 +89,8 @@ async def start_scheduler(
         )
     else:
         logger.info("Music polling skipped: SUNO_API_KEY is not configured")
+    schedule_gift_expiry(sessionmaker=sessionmaker, redis=redis)
+    schedule_generation_worker(bot=bot, sessionmaker=sessionmaker, redis=redis)
     while True:
         await scheduler.run_pending()
         await asyncio.sleep(1)
@@ -95,7 +103,7 @@ async def startup(dispatcher: Dispatcher, bot: Bot, se: Settings, redis: Redis) 
     await init_db(engine)
 
     try:
-        await recover_orphan_generations(sessionmaker=db_session, redis=redis)
+        await recover_orphan_generations(sessionmaker=db_session, redis=redis, bot=bot)
     except Exception:
         logger.exception("Не удалось восстановить прерванные генерации при старте")
 
@@ -111,12 +119,13 @@ async def startup(dispatcher: Dispatcher, bot: Bot, se: Settings, redis: Redis) 
     dispatcher.update.outer_middleware(ThrowDBSessionMiddleware())
     dispatcher.update.outer_middleware(ThrowUserMiddleware())
 
-    asyncio.create_task(
+    spawn_background_task(
         start_scheduler(
             sessionmaker=db_session,
             redis=redis,
             bot=bot,
-        )
+        ),
+        name="scheduler",
     )
 
     logger.info("Бот запущен")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.types import CallbackQuery
 
 from bot.keyboards.factories import MenuAction
@@ -12,9 +12,9 @@ router = Router()
 
 
 @router.callback_query(MenuAction.filter(F.action == "how"))
-async def menu_how(query: CallbackQuery) -> None:
+async def menu_how(query: CallbackQuery, bot: Bot) -> None:
     await query.answer()
-    bot_name = (await query.bot.get_my_name()).name
+    bot_name = (await bot.get_my_name()).name
     text = how_text(bot_name)
     await edit_or_answer(
         query,

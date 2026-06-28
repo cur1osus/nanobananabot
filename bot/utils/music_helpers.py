@@ -163,7 +163,7 @@ async def start_generation(
             event_type=UsageEventType.INSTRUMENTAL.value,
         )
 
-    base_name = title.strip() if title.strip() else _first_line(prompt)
+    base_name = title.strip() or _first_line(prompt)
     if not base_name:
         base_name = "Трек"
 

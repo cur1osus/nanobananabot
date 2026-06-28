@@ -26,7 +26,7 @@ class VideoFlowData:
     image_file_id: str = ""
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "VideoFlowData":
+    def from_dict(cls, raw: dict[str, Any]) -> VideoFlowData:
         return cls(
             model_key=str(raw.get("model_key", DEFAULT_KLING_MODEL_KEY)),
             duration=int(raw.get("duration", DEFAULT_VIDEO_DURATION)),

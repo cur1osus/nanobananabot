@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import aiohttp
@@ -79,7 +78,7 @@ class AgentPlatformClient:
                         raise AgentPlatformAPIError(
                             f"AgentPlatform API error {response.status}: {message}"
                         )
-        except asyncio.TimeoutError as err:
+        except TimeoutError as err:
             raise AgentPlatformAPIError("Таймаут запроса к AgentPlatform.") from err
         except aiohttp.ClientError as err:
             raise AgentPlatformAPIError(

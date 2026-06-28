@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 from aiogram.types import User
-from sqlalchemy import func, select, update
+from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.sql.operators import eq, ne
 
 from .models import UserModel
@@ -17,21 +17,22 @@ if TYPE_CHECKING:
 
 async def create_user(*, user: User, session: AsyncSession) -> UserModel:
     if user.username:
-        stmt = select(UserModel).where(
-            eq(UserModel.username, user.username), ne(UserModel.user_id, user.id)
+        another_user: UserModel | None = await session.scalar(
+            select(UserModel).where(
+                eq(UserModel.username, user.username), ne(UserModel.user_id, user.id)
+            )
         )
-        another_user: UserModel | None = await session.scalar(stmt)
 
         if another_user:
-            stmt = (
+            await session.execute(
                 update(UserModel)
                 .where(eq(UserModel.user_id, another_user.user_id))
                 .values(username=None)
             )
-            await session.execute(stmt)
 
-    stmt = select(UserModel).where(eq(UserModel.user_id, user.id))
-    user_model: UserModel | None = await session.scalar(stmt)
+    user_model: UserModel | None = await session.scalar(
+        select(UserModel).where(eq(UserModel.user_id, user.id))
+    )
 
     if not user_model:
         now = datetime.now(tz=UTC).replace(tzinfo=None)
@@ -48,7 +49,7 @@ async def create_user(*, user: User, session: AsyncSession) -> UserModel:
         user_model.username = user.username
         user_model.name = user.first_name
 
-    return cast(UserModel, user_model)
+    return user_model
 
 
 async def get_user_model(
@@ -57,22 +58,19 @@ async def get_user_model(
     redis: Redis,
     user: User,
 ) -> UserRD:
-    user_model = await UserRD.get(redis, user.id)
+    cached = await UserRD.get(redis, user.id)
 
-    if user_model:
-        return user_model
+    if cached:
+        return cached
 
     async with db_pool() as session:
         async with session.begin():
-            user_model: UserModel = await create_user(
-                user=user,
-                session=session,
-            )
+            user_db = await create_user(user=user, session=session)
 
-    user_model: UserRD = UserRD.from_orm(cast(UserModel, user_model))
-    await cast(UserRD, user_model).save(redis)
+    user_rd = UserRD.from_orm(user_db)
+    await user_rd.save(redis)
 
-    return cast(UserRD, user_model)
+    return user_rd
 
 
 async def charge_user_credits(
@@ -88,10 +86,15 @@ async def charge_user_credits(
     stmt = (
         update(UserModel)
         .where(eq(UserModel.user_id, user.user_id), UserModel.credits >= amount)
-        .values(credits=UserModel.credits - amount)
+        .values(
+            credits=UserModel.credits - amount,
+            # Подарок тратится в первую очередь: уменьшаем неизрасходованный
+            # остаток подарка вместе с обычным списанием, не уходя в минус.
+            gift_credits=func.greatest(UserModel.gift_credits - amount, 0),
+        )
     )
     result = await session.execute(stmt)
-    if result.rowcount == 0:
+    if cast(CursorResult, result).rowcount == 0:
         await session.rollback()
         return False
 
@@ -140,6 +143,82 @@ async def add_user_credits(
     await user.delete(redis, user.user_id)
 
 
+async def grant_gift_credits(
+    *,
+    session: AsyncSession,
+    redis: Redis,
+    user_id: int,
+    amount: int,
+    expires_at: datetime,
+) -> None:
+    """Начислить подарочные кредиты со сроком сгорания.
+
+    Кредиты добавляются к общему балансу, а ``gift_credits`` / ``gift_expires_at``
+    помечают, какая часть и до какого момента считается подарком. Новый подарок
+    перезаписывает срок и суммируется с неизрасходованным остатком прежнего.
+    """
+    if amount <= 0:
+        return
+
+    stmt = (
+        update(UserModel)
+        .where(eq(UserModel.user_id, user_id))
+        .values(
+            credits=UserModel.credits + amount,
+            gift_credits=UserModel.gift_credits + amount,
+            gift_expires_at=expires_at,
+        )
+    )
+    await session.execute(stmt)
+    await session.commit()
+    await UserRD.delete(redis, user_id)
+
+
+async def expire_gift_credits(
+    *,
+    session: AsyncSession,
+    redis: Redis,
+) -> int:
+    """Сжечь неизрасходованные подарочные кредиты с истёкшим сроком.
+
+    Возвращает число затронутых пользователей. У каждого из общего баланса
+    вычитается оставшийся подарок (но не ниже нуля), а подарочные поля
+    обнуляются. Кэш Redis по затронутым пользователям инвалидируется.
+    """
+    now = datetime.now(UTC).replace(tzinfo=None)
+    expired_user_ids = list(
+        await session.scalars(
+            select(UserModel.user_id).where(
+                UserModel.gift_credits > 0,
+                UserModel.gift_expires_at.is_not(None),
+                UserModel.gift_expires_at <= now,
+            )
+        )
+    )
+    if not expired_user_ids:
+        return 0
+
+    stmt = (
+        update(UserModel)
+        .where(
+            UserModel.gift_credits > 0,
+            UserModel.gift_expires_at.is_not(None),
+            UserModel.gift_expires_at <= now,
+        )
+        .values(
+            credits=func.greatest(UserModel.credits - UserModel.gift_credits, 0),
+            gift_credits=0,
+            gift_expires_at=None,
+        )
+    )
+    await session.execute(stmt)
+    await session.commit()
+
+    for user_id in expired_user_ids:
+        await UserRD.delete(redis, user_id)
+    return len(expired_user_ids)
+
+
 async def deduct_user_credits(
     *,
     session: AsyncSession,
@@ -176,7 +255,7 @@ async def add_referral_balance(
         .values(balance=UserModel.balance + amount)
     )
     result = await session.execute(stmt)
-    if result.rowcount == 0:
+    if cast(CursorResult, result).rowcount == 0:
         await session.rollback()
         return False
 
@@ -201,7 +280,7 @@ async def withdraw_user_balance(
         .values(balance=UserModel.balance - amount)
     )
     result = await session.execute(stmt)
-    if result.rowcount == 0:
+    if cast(CursorResult, result).rowcount == 0:
         await session.rollback()
         return False
 

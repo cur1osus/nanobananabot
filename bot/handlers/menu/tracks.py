@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import math
@@ -448,8 +447,12 @@ async def track_retry(
     await query.answer()
 
     credits_cost = task.credits_cost
-    if not await charge_user_credits(session=session, redis=redis, user=user, amount=credits_cost):
-        await query.answer(f"Недостаточно кредитов. Нужно {credits_cost}.", show_alert=True)
+    if not await charge_user_credits(
+        session=session, redis=redis, user=user, amount=credits_cost
+    ):
+        await query.answer(
+            f"Недостаточно кредитов. Нужно {credits_cost}.", show_alert=True
+        )
         return
 
     try:
@@ -463,13 +466,19 @@ async def track_retry(
         )
     except SunoAPIError as err:
         logger.warning("Retry генерации не удался task_id=%s: %s", task.task_id, err)
-        await refund_user_credits(session=session, redis=redis, user=user, amount=credits_cost)
+        await refund_user_credits(
+            session=session, redis=redis, user=user, amount=credits_cost
+        )
         await query.message.answer("Не удалось запустить генерацию. Попробуйте позже.")
         return
 
-    user_db = await session.scalar(select(UserModel).where(UserModel.user_id == user.user_id))
+    user_db = await session.scalar(
+        select(UserModel).where(UserModel.user_id == user.user_id)
+    )
     if not user_db:
-        await refund_user_credits(session=session, redis=redis, user=user, amount=credits_cost)
+        await refund_user_credits(
+            session=session, redis=redis, user=user, amount=credits_cost
+        )
         await query.message.answer("Ошибка при создании задачи. Попробуйте позже.")
         return
 
@@ -495,7 +504,9 @@ async def track_retry(
     except Exception as err:
         await session.rollback()
         logger.warning("Не удалось сохранить retry-задачу %s: %s", new_task_id, err)
-        await refund_user_credits(session=session, redis=redis, user=user, amount=credits_cost)
+        await refund_user_credits(
+            session=session, redis=redis, user=user, amount=credits_cost
+        )
         await query.message.answer("Ошибка при сохранении задачи. Попробуйте позже.")
         return
 
@@ -542,7 +553,7 @@ async def _send_track_audio(
     for idx, audio_url in enumerate(audio_urls, start=1):
         try:
             audio_bytes = await _download_audio(audio_url)
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        except (TimeoutError, aiohttp.ClientError) as err:
             logger.warning("Не удалось скачать аудио %s: %s", audio_url, err)
             await message.answer(f"Не удалось скачать аудио для трека {idx}.")
             continue
@@ -560,8 +571,8 @@ async def _send_track_audio(
 def _split_text(text: str, limit: int = 3500) -> list[str]:
     if len(text) <= limit:
         return [text]
-    chunks = []
-    current = []
+    chunks: list[str] = []
+    current: list[str] = []
     current_len = 0
     for line in text.splitlines(keepends=True):
         if current_len + len(line) > limit and current:

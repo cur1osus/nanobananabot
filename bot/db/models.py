@@ -24,6 +24,12 @@ class UserModel(Base):
     credits: Mapped[int] = mapped_column(default=5)
     role: Mapped[str] = mapped_column(String(50), default=UserRole.USER.value)
 
+    # Подарочные кредиты с «сгоранием»: часть общего баланса (входит в credits),
+    # которая обнулится, если её не потратить до gift_expires_at. gift_credits —
+    # сколько ещё не потрачено из подарка; уменьшается вместе со списаниями.
+    gift_credits: Mapped[int] = mapped_column(default=0, server_default="0")
+    gift_expires_at: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
+
     referrer_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     balance: Mapped[int] = mapped_column(default=0, nullable=False)
 
@@ -134,12 +140,17 @@ class MusicTaskModel(Base):
 
 
 class GenerationTaskModel(Base):
-    """Учёт синхронных генераций (фото/видео) для гарантии возврата кредитов.
+    """Очередь генераций фото/видео с гарантией возврата кредитов и переживанием
+    рестарта.
 
-    Запись создаётся в статусе ``processing`` сразу после атомарного списания
-    кредитов и переводится в ``success`` после доставки результата либо
-    ``refunded`` при ошибке. Незавершённые при рестарте записи возвращаются
-    пользователю на старте бота (см. recover_orphan_generations)."""
+    Кредиты списываются атомарно при постановке в очередь (``queued``); фоновый
+    воркер берёт задачу (``processing``), выполняет генерацию, доставляет
+    результат (``success``) или возвращает кредиты при ошибке (``error`` →
+    refunded). ``params`` хранит всё необходимое для выполнения после рестарта
+    (промпт, модель, провайдер, file_id референсов, настройки видео).
+    ``provider_task_id`` — id воркфлоу CivitAI: позволяет доопросить незавершённую
+    генерацию после перезапуска вместо повторной отправки. Восстановление при
+    старте бота см. в recover_orphan_generations."""
 
     __tablename__ = "generation_tasks"
 
@@ -147,8 +158,13 @@ class GenerationTaskModel(Base):
     kind: Mapped[str] = mapped_column(String(30))
     credits_cost: Mapped[int] = mapped_column(default=0)
     status: Mapped[str] = mapped_column(
-        String(30), default=GenerationTaskStatus.PROCESSING.value, index=True
+        String(30), default=GenerationTaskStatus.QUEUED.value, index=True
     )
+    chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    status_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    params: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_task_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    attempts: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP,
         server_default=func.current_timestamp(),

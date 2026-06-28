@@ -92,8 +92,9 @@ async def style_selected(
         return
 
     await update_music_data(state, style=style_key)
+    source = query.message if isinstance(query.message, Message) else None
     await start_generation_from_style(
-        query.message,
+        source,
         state,
         user=user,
         session=session,

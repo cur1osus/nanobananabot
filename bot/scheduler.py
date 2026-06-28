@@ -286,12 +286,11 @@ class Job:
         if not isinstance(time_str, str):
             msg = "at() should be passed a string"
             raise TypeError(msg)
-        if self.unit == "days" or self.start_day:
-            if not re.match(r"^[0-2]\d:[0-5]\d(:[0-5]\d)?$", time_str):
-                msg = (
-                    "Invalid time format for a daily job (valid format is HH:MM(:SS)?)"
-                )
-                raise ScheduleValueError(msg)
+        if (self.unit == "days" or self.start_day) and not re.match(
+            r"^[0-2]\d:[0-5]\d(:[0-5]\d)?$", time_str
+        ):
+            msg = "Invalid time format for a daily job (valid format is HH:MM(:SS)?)"
+            raise ScheduleValueError(msg)
         if self.unit == "hours" and not re.match(r"^([0-5]\d)?:[0-5]\d$", time_str):
             msg = "Invalid time format for an hourly job (valid format is (MM)?:SS)"
             raise ScheduleValueError(msg)

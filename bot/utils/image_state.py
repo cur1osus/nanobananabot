@@ -19,7 +19,7 @@ class ImageFlowData:
     prompt_requested: bool = False
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "ImageFlowData":
+    def from_dict(cls, raw: dict[str, Any]) -> ImageFlowData:
         model_key = str(raw.get("model_key", DEFAULT_IMAGE_MODEL_KEY))
         raw_photos = raw.get("photos", [])
         photos = (

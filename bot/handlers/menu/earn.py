@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 from aiogram.utils.deep_linking import create_start_link
@@ -27,12 +27,13 @@ async def menu_earn(
     state: FSMContext,
     user: UserRD,
     session: AsyncSession,
+    bot: Bot,
 ) -> None:
     await query.answer()
     await state.clear()
-    bot_name = (await query.bot.get_my_name()).name
+    bot_name = (await bot.get_my_name()).name
     ref_link = await create_start_link(
-        bot=query.bot,
+        bot=bot,
         payload=f"ref_{user.user_id}",
         encode=False,
     )

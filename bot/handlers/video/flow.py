@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import base64
 import logging
 import uuid
 
-import aiohttp
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,18 +13,15 @@ from bot.db.enum import GenerationKind
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import VideoAspectRatio, VideoNav, VideoSetting
 from bot.keyboards.inline import (
-    ik_back_home,
     ik_video_back_to_settings,
     ik_video_settings,
 )
 from bot.states import VideoGenerationState
-from bot.utils.admin_notify import notify_admins_error
 from bot.utils.billing import (
     CreditsExhausted,
     GenerationBusy,
-    reserve_generation,
+    enqueue_generation,
 )
-from bot.utils.http import get_http_session
 from bot.utils.messaging import edit_or_answer
 from bot.utils.video_models import VIDEO_RATIO_MAP, get_kling_model, video_cost
 from bot.utils.video_state import (
@@ -34,11 +29,6 @@ from bot.utils.video_state import (
     get_video_data,
     update_video_data,
     video_settings_text,
-)
-from bot.utils.video_tasks import (
-    VideoGenerationError,
-    VideoGenerationTimeoutError,
-    generate_video,
 )
 
 router = Router()
@@ -234,115 +224,46 @@ async def start_video_generation(
         )
         return
 
-    task_id = uuid.uuid4().hex[:8]
-    if query.message and isinstance(query.message, Message):
-        status_msg = await query.message.answer(
-            f"🎬 Генерация видео запущена!\n"
-            f"🆔 Задача: {task_id}\n"
-            f"📹 Модель: {model.title}\n"
-            f"⏱ Длительность: {data.duration} сек.\n"
-            f"📐 Формат: {data.aspect_ratio}\n"
-            "Это займёт некоторое время, я пришлю результат."
-        )
-    else:
+    if not (query.message and isinstance(query.message, Message)):
         return
 
-    reference_image: str | None = None
-    if data.image_file_id and query.message.bot:
-        try:
-            bot = query.message.bot
-            file = await bot.get_file(data.image_file_id)
-            if file.file_path:
-                bot_token = getattr(bot, "token", "")
-                url = f"https://api.telegram.org/file/bot{bot_token}/{file.file_path}"
-                timeout = aiohttp.ClientTimeout(total=60)
-                http_session = get_http_session()
-                async with http_session.get(url, timeout=timeout) as response:
-                    img_bytes = await response.read()
-                reference_image = "data:image/jpeg;base64," + base64.b64encode(
-                    img_bytes
-                ).decode("ascii")
-        except Exception:
-            logger.exception("Failed to prepare reference image for video")
+    display_id = uuid.uuid4().hex[:8]
+    status_msg = await query.message.answer(
+        f"🎬 Генерация видео запущена!\n"
+        f"🆔 Задача: {display_id}\n"
+        f"📹 Модель: {model.title}\n"
+        f"⏱ Длительность: {data.duration} сек.\n"
+        f"📐 Формат: {data.aspect_ratio}\n"
+        "Это займёт некоторое время, я пришлю результат."
+    )
 
+    # Референс скачивает воркер по сохранённому file_id — он переживает рестарт.
     try:
-        async with reserve_generation(
+        await enqueue_generation(
             session=session,
             redis=redis,
             user=user,
-            cost=cost,
             kind=GenerationKind.VIDEO.value,
-        ):
-            video_bytes = await generate_video(
-                prompt=data.prompt.strip(),
-                runware_model=model.runware_model,
-                duration=data.duration,
-                aspect_ratio=data.aspect_ratio,
-                with_audio=data.with_audio,
-                reference_image=reference_image,
-                supports_duration=model.supports_duration,
-                supports_dimensions=model.supports_dimensions,
-                supports_sound=model.supports_sound,
-                ratio_dims=model.ratio_dims,
-                needs_provider_settings=model.needs_provider_settings,
-            )
-            filename = f"video_{task_id}.mp4"
-            await query.message.answer_video(
-                video=BufferedInputFile(file=video_bytes, filename=filename),
-                caption=(
-                    f"🎬 Готово!\n"
-                    f"📹 Модель: {model.title}\n"
-                    f"⏱ Длительность: {data.duration} сек.\n"
-                    f"💰 Списано: {cost} кредитов"
-                ),
-                reply_markup=await ik_back_home(),
-            )
-            await query.message.answer_document(
-                document=BufferedInputFile(file=video_bytes, filename=filename),
-                caption="📥 Без сжатия",
-            )
-        await status_msg.delete()
-
+            cost=cost,
+            chat_id=query.message.chat.id,
+            status_message_id=status_msg.message_id,
+            params={
+                "model_key": data.model_key,
+                "prompt": data.prompt.strip(),
+                "aspect_ratio": data.aspect_ratio,
+                "duration": data.duration,
+                "with_audio": data.with_audio,
+                "image_file_id": data.image_file_id or "",
+            },
+        )
     except GenerationBusy:
         await status_msg.edit_text(
             "⏳ Предыдущая генерация ещё выполняется. Дождитесь результата и попробуйте снова."
         )
     except CreditsExhausted:
         await status_msg.edit_text(f"Недостаточно кредитов. Нужно: {cost}.")
-    except VideoGenerationTimeoutError:
+    except Exception:
+        logger.exception("Не удалось поставить генерацию видео в очередь")
         await status_msg.edit_text(
-            "❌ Генерация видео заняла слишком много времени.\n\n"
-            "Попробуйте ещё раз чуть позже."
+            "❌ Не удалось запустить генерацию. Попробуйте ещё раз."
         )
-    except VideoGenerationError as e:
-        logger.exception("Video generation error")
-        await status_msg.edit_text(
-            "❌ Не удалось сгенерировать видео.\n\nПопробуйте ещё раз чуть позже."
-        )
-        if query.message.bot:
-            await notify_admins_error(
-                query.message.bot,
-                "Ошибка генерации видео (Kling)",
-                e,
-                context={
-                    "user_id": user.user_id,
-                    "model": model.runware_model,
-                    "duration": data.duration,
-                    "prompt": data.prompt[:200],
-                },
-            )
-    except Exception as e:
-        logger.exception("Unexpected video generation error")
-        await status_msg.edit_text(
-            "❌ Не удалось сгенерировать видео.\n\nПопробуйте ещё раз чуть позже."
-        )
-        if query.message.bot:
-            await notify_admins_error(
-                query.message.bot,
-                "Неожиданная ошибка генерации видео",
-                e,
-                context={
-                    "user_id": user.user_id,
-                    "model": model.runware_model,
-                },
-            )

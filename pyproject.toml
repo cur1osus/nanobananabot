@@ -70,3 +70,92 @@ dev = [
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+# Помимо дефолтных E/F включаем наборы, важные для async-бота и перфа:
+#   ASYNC — блокирующие вызовы в корутинах; PERF — перф-антипаттерны;
+#   C4/PIE/FURB/SIM/UP — устранение лишних аллокаций и устаревших идиом;
+#   B/RUF — классы багов (висящие задачи, mutable defaults и т.п.).
+select = ["E", "F", "W", "ASYNC", "PERF", "C4", "B", "SIM", "UP", "RUF", "PIE", "FLY", "FURB"]
+ignore = [
+    # Кириллица в строках/комментариях помечается как «неоднозначные» символы —
+    # это весь UI-текст бота, ложные срабатывания.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    # timeout пробрасывается в aiohttp.ClientTimeout намеренно, asyncio.timeout
+    # тут не нужен.
+    "ASYNC109",
+    # Ширину строк определяет `ruff format`; оставшиеся длинные строки — это
+    # неразрывный UI-текст/URL, ломать их в ущерб читаемости смысла нет.
+    "E501",
+    # str-Enum → StrEnum меняет семантику str(member) и может незаметно сломать
+    # f-строки и сравнения с `.value`.
+    "UP042",
+    # Явная вложенность `async with sessionmaker()` / `session.begin()` нагляднее
+    # показывает границы сессии и транзакции, чем слитный однострочник.
+    "SIM117",
+]
+
+[dependency-groups]
+dev = [
+    "bandit>=1.9.4",
+    "mypy>=2.1.0",
+    "py-spy>=0.4.2",
+    "radon>=6.0.1",
+    "safety>=3.2.11",
+]
+
+[tool.bandit]
+# bot/scheduler.py — вкомпиленная копия библиотеки `schedule`; её assert/random
+# не наши и не несут риска. Остальной код сканируется полностью.
+exclude_dirs = ["tests", "bot/scheduler.py"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["bot"]
+# bot/ — namespace-пакет без верхнеуровневого __init__; явная база пакетов
+# не даёт mypy резолвить один файл и как utils.x, и как bot.utils.x.
+explicit_package_bases = true
+mypy_path = "."
+# Прагматичный набор: ловим реальные ошибки несоответствия типов, не требуя
+# аннотировать каждую функцию (база писалась не под mypy).
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+# Сторонние пакеты без type-стабов: не зашумляем отчёт «import-untyped».
+[[tool.mypy.overrides]]
+module = [
+    "runware.*",
+    "aiomysql.*",
+    "magic_filter.*",
+    "pytz.*",
+]
+ignore_missing_imports = true
+
+# bot/scheduler.py — вкомпиленная копия библиотеки `schedule` с динамическими
+# паттернами, которые mypy ложно помечает unreachable/not-callable. Чужой код,
+# не переписываем под типизацию.
+[[tool.mypy.overrides]]
+module = ["bot.scheduler"]
+ignore_errors = true
+
+# pydantic-settings BaseSettings заполняет поля из окружения, поэтому mypy
+# ошибочно требует все аргументы конструктора и не понимает nested default_factory.
+[[tool.mypy.overrides]]
+module = ["bot.settings"]
+disable_error_code = ["call-arg", "arg-type"]
+
+# В контексте хендлера aiogram гарантирует ненулевые `message.bot`,
+# `callback.message`, `event_from_user`, но типизирует их как Optional. Реальная
+# логика (utils/db) проверяется строго — там подобный шум не глушится.
+[[tool.mypy.overrides]]
+module = ["bot.handlers.*"]
+disable_error_code = ["union-attr"]

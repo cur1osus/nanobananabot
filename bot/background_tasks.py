@@ -3,17 +3,23 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any
+from datetime import datetime, timedelta, UTC
+from typing import TYPE_CHECKING, Any, cast
 
 from aiogram import Bot
-from sqlalchemy import or_, select
+from sqlalchemy import CursorResult, or_, select, update
 from sqlalchemy.orm import selectinload
 
-from bot.db.enum import MusicTaskStatus
-from bot.db.models import MusicTaskModel
+from bot.db.enum import GenerationTaskStatus, MusicTaskStatus
+from bot.db.models import GenerationTaskModel, MusicTaskModel
 from bot.scheduler import default_scheduler
-from bot.utils.background_task_helpers import refund_task_credits, send_tracks
+from bot.utils.background_task_helpers import (
+    refund_task_credits,
+    send_tracks,
+    spawn_background_task,
+)
+from bot.utils.generation_runner import run_generation_task
+from bot.utils.gift_credits import run_gift_expiry
 from bot.utils.suno_api import SunoAPIError, build_suno_client
 
 if TYPE_CHECKING:
@@ -26,6 +32,21 @@ POLL_INTERVAL_SECONDS = 10
 MAX_TASKS_PER_RUN = 20
 MAX_POLL_ERRORS = 3
 MIN_POLL_TIMEOUT = 600
+
+# Сгорание подарочных кредитов проверяем раз в 5 минут: точность «до минуты»
+# здесь не нужна, а нагрузка на БД остаётся минимальной.
+GIFT_EXPIRY_INTERVAL_SECONDS = 300
+
+# Очередь генераций фото/видео опрашиваем часто (запуск дешёвый — лишь claim и
+# spawn), но число одновременно выполняемых генераций ограничиваем, чтобы не
+# перегружать провайдеров и память.
+GENERATION_POLL_SECONDS = 3
+MAX_CONCURRENT_GENERATIONS = 3
+
+# id задач, исполняемых прямо сейчас (в spawned-задачах), — чтобы диспетчер не
+# подхватил одну и ту же дважды.
+_inflight_generations: set[int] = set()
+_GENERATION_DISPATCH_LOCK = asyncio.Lock()
 
 TERMINAL_STATUSES = {
     "SUCCESS",
@@ -60,6 +81,109 @@ def schedule_music_polling(
     ).tag("music_poll")
 
 
+def schedule_generation_worker(
+    *,
+    bot: Bot,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    redis: Redis,
+) -> None:
+    if default_scheduler.get_jobs(tag="generation_worker"):
+        return
+    default_scheduler.every(GENERATION_POLL_SECONDS).seconds.do(
+        dispatch_generation_tasks,
+        bot=bot,
+        sessionmaker=sessionmaker,
+        redis=redis,
+    ).tag("generation_worker")
+
+
+async def dispatch_generation_tasks(
+    *,
+    bot: Bot,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    redis: Redis,
+) -> None:
+    """Забрать задачи из очереди и запустить их выполнение параллельно.
+
+    Сам диспетчер ничего не ждёт: атомарно переводит ``queued`` → ``processing``
+    и запускает исполнитель в фоне. Параллельность ограничена
+    ``MAX_CONCURRENT_GENERATIONS``.
+    """
+    if _GENERATION_DISPATCH_LOCK.locked():
+        return
+    async with _GENERATION_DISPATCH_LOCK:
+        free = MAX_CONCURRENT_GENERATIONS - len(_inflight_generations)
+        if free <= 0:
+            return
+        async with sessionmaker() as session:
+            ids = (
+                await session.scalars(
+                    select(GenerationTaskModel.id)
+                    .where(
+                        GenerationTaskModel.status == GenerationTaskStatus.QUEUED.value
+                    )
+                    .order_by(GenerationTaskModel.created_at.asc())
+                    .limit(free)
+                )
+            ).all()
+            for task_id in ids:
+                if task_id in _inflight_generations:
+                    continue
+                result = await session.execute(
+                    update(GenerationTaskModel)
+                    .where(
+                        GenerationTaskModel.id == task_id,
+                        GenerationTaskModel.status == GenerationTaskStatus.QUEUED.value,
+                    )
+                    .values(status=GenerationTaskStatus.PROCESSING.value)
+                )
+                await session.commit()
+                if cast(CursorResult, result).rowcount == 0:
+                    continue
+                _inflight_generations.add(task_id)
+                spawn_background_task(
+                    _run_and_release(
+                        bot=bot,
+                        sessionmaker=sessionmaker,
+                        redis=redis,
+                        task_id=task_id,
+                    ),
+                    name=f"generation:{task_id}",
+                )
+
+
+async def _run_and_release(
+    *,
+    bot: Bot,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    redis: Redis,
+    task_id: int,
+) -> None:
+    try:
+        await run_generation_task(
+            bot=bot,
+            sessionmaker=sessionmaker,
+            redis=redis,
+            task_id=task_id,
+        )
+    finally:
+        _inflight_generations.discard(task_id)
+
+
+def schedule_gift_expiry(
+    *,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    redis: Redis,
+) -> None:
+    if default_scheduler.get_jobs(tag="gift_expiry"):
+        return
+    default_scheduler.every(GIFT_EXPIRY_INTERVAL_SECONDS).seconds.do(
+        run_gift_expiry,
+        sessionmaker=sessionmaker,
+        redis=redis,
+    ).tag("gift_expiry")
+
+
 async def poll_music_tasks(
     *,
     bot: Bot,
@@ -85,7 +209,7 @@ async def _poll_music_tasks_inner(
     sessionmaker: async_sessionmaker[AsyncSession],
     redis: Redis,
 ) -> None:
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(UTC).replace(tzinfo=None)
     cutoff = now - timedelta(seconds=POLL_INTERVAL_SECONDS)
     stmt = (
         select(MusicTaskModel)

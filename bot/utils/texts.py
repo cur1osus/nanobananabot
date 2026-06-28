@@ -17,9 +17,7 @@ MAIN_MENU_TEXT = (
     "🏠 Главное меню\n💰 Ваш баланс: {credits} кредитов\n🖼 Что вы хотите сделать?"
 )
 
-BOT_INFO_TEXT = (
-    "Bum Ai Bot 🤖 — изображения, видео и музыка.\n\nПоддержка: @Webskill"
-)
+BOT_INFO_TEXT = "Bum Ai Bot 🤖 — изображения, видео и музыка.\n\nПоддержка: @Webskill"
 
 CONTACTS_TEXT = "📞 Контакты\n\nСлужба поддержки: @Webskill"
 
@@ -279,12 +277,18 @@ def generation_started_text(task_id: str, model_key: str) -> str:
     from bot.utils.image_models import get_image_model, is_adult_model_key
 
     model = get_image_model(model_key)
-    # В 18+ название модели не показываем.
-    model_line = "" if is_adult_model_key(model_key) else f"🍌 Модель: {model.title}\n"
+    is_adult = is_adult_model_key(model_key)
+    model_line = "" if is_adult else f"🍌 Модель: {model.title}\n"
+    duration_note = (
+        "\n⏳ Генерация может занять до 10 минут.\n"
+        if is_adult and model.provider == "civitai"
+        else ""
+    )
     return (
         "✅ Генерация запущена!\n"
         f"🆔 Задача: {task_id}\n"
         f"{model_line}"
+        f"{duration_note}"
         "Я пришлю результат, когда он будет готов."
     )
 
@@ -306,7 +310,6 @@ ADULT_MENU_TEXT = (
     f"{format_generations(get_image_model(DEFAULT_ADULT_IMAGE_MODEL_KEY).cost)}."
 )
 
-WITHDRAW_TEXT = "Вывод средств пока недоступен. Мы сообщим, когда он заработает."
 TOPUP_METHODS_TEXT = "Выберите способ оплаты:"
 
 
@@ -478,7 +481,7 @@ def earn_text(
         "1️⃣ Вы публикуете реферальную ссылку на бота в соц сетях "
         "или отправляете друзьям\n"
         "2️⃣ Друзья пользуются ботом и оплачивают генерации\n"
-        "3️⃣ 30% от всех оплат зачисляется на ваш баланс\n"
+        "3️⃣ 20% от всех оплат зачисляется на ваш баланс\n"
         "4️⃣ Сумму от 1000 руб можно вывести на карту\n\n"
         f"👥 Ваши рефералы: {referrals_count}\n"
         f"💰 Реферальный баланс: {format_rub(balance_kopeks)} руб.\n"

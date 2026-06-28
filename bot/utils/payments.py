@@ -74,7 +74,7 @@ def build_invoice(
     payload = build_payload(method.key, tariff.plan)
     if method.key == "stars":
         currency = STARS_CURRENCY
-        provider_token = ""
+        provider_token = ""  # nosec B105 — Telegram Stars не использует provider token
         amount = tariff.price
         provider_data = None
         need_email = False

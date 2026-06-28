@@ -12,6 +12,7 @@ from bot.keyboards.factories import (
     ModelGroupSwitch,
     ModelMenu,
     ModelSelect,
+    SelectScenario,
     TopupMethod,
     TopupPlan,
     VideoAspectRatio,
@@ -194,13 +195,54 @@ async def ik_image_result_actions() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-async def ik_prompt_nav() -> InlineKeyboardMarkup:
+async def ik_demo_result_cta() -> InlineKeyboardMarkup:
+    """CTA после демо-генерации: подтолкнуть к работе со своим фото."""
     builder = InlineKeyboardBuilder()
+    builder.button(
+        text="🖌 Обработать своё фото",
+        callback_data=MenuAction(action="edit").pack(),
+    )
+    builder.button(
+        text="✨ Сгенерировать по тексту",
+        callback_data=MenuAction(action="image").pack(),
+    )
+    builder.button(
+        text=BACK_BUTTON_TEXT,
+        callback_data=MenuAction(action="home").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_prompt_nav(is_adult: bool = False) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if is_adult:
+        builder.button(
+            text="📋 Сценарии",
+            callback_data=SelectScenario(action="select", key="").pack(),
+        )
     builder.button(
         text="↩️ Назад",
         callback_data=ImageNav(action="to_photos").pack(),
     )
     builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_scenario_select() -> InlineKeyboardMarkup:
+    from bot.utils.image_scenarios import EDIT_SCENARIOS
+
+    builder = InlineKeyboardBuilder()
+    for sc in EDIT_SCENARIOS:
+        builder.button(
+            text=sc.title,
+            callback_data=SelectScenario(action="select", key=sc.key).pack(),
+        )
+    builder.button(
+        text="↩️ Назад",
+        callback_data=ImageNav(action="to_prompt").pack(),
+    )
+    builder.adjust(2, 2, 2, 2, 1)
     return builder.as_markup()
 
 
@@ -259,6 +301,12 @@ async def ik_create_aspect_ratio(is_adult: bool = False) -> InlineKeyboardMarkup
 
 async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    # Демо-фото пока тестируем только на админах.
+    if is_admin:
+        builder.button(
+            text="🎁 Попробовать на демо-фото",
+            callback_data=MenuAction(action="demo_try").pack(),
+        )
     builder.button(
         text="🖌 Редактирование фото",
         callback_data=MenuAction(action="edit").pack(),
@@ -462,10 +510,14 @@ async def ik_info_periods(selected: str) -> InlineKeyboardMarkup:
         callback_data=MenuAction(action="broadcast").pack(),
     )
     builder.button(
+        text="🎁 Подарок нулевым",
+        callback_data=MenuAction(action="gift_zero").pack(),
+    )
+    builder.button(
         text=BACK_BUTTON_TEXT,
         callback_data=MenuAction(action="home").pack(),
     )
-    builder.adjust(3, 1, 1, 1, 1)
+    builder.adjust(3, 1, 1, 1, 1, 1)
     return builder.as_markup()
 
 

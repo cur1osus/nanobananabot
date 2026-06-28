@@ -178,6 +178,17 @@ class PaymentsSettings(BaseSettings):
     )
 
 
+class CivitaiSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="CIVITAI_", extra="ignore", protected_namespaces=()
+    )
+
+    api_key: str = ""
+    base_url: str = "https://orchestration.civitai.com"
+    timeout: int = 120
+    total_timeout: int = 600
+
+
 class TopupSettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
@@ -211,6 +222,7 @@ class Settings(BaseSettings):
     withdraw: WithdrawSettings = Field(default_factory=WithdrawSettings)
     payments: PaymentsSettings = Field(default_factory=PaymentsSettings)
     topup: TopupSettings = Field(default_factory=TopupSettings)
+    civitai: CivitaiSettings = Field(default_factory=CivitaiSettings)
 
     @field_validator("admin_ids", mode="before")
     @classmethod

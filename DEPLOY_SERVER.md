@@ -28,13 +28,32 @@ rsync -az \
 ```
 
 ### 3) Обновить зависимости на сервере
+Проект использует `uv` (`pyproject.toml` + `uv.lock`). Если `uv` ещё не
+установлен на сервере — поставить один раз:
 ```bash
 proj
-cd /root/nanobananabot
-.venv/bin/pip install -r r.txt
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### 4) Перезапустить сервис
+Установить/обновить зависимости строго по локу:
+```bash
+cd /root/nanobananabot
+uv sync --frozen --no-dev
+```
+`uv sync` сам создаёт и поддерживает `.venv` в папке проекта; флаг `--frozen`
+запрещает изменять `uv.lock`, `--no-dev` пропускает dev-зависимости.
+
+### 4) Применить миграции БД (ОБЯЗАТЕЛЬНО при изменении схемы)
+```bash
+cd /root/nanobananabot
+uv run alembic upgrade head
+uv run alembic current   # должно показать актуальную ревизию (head)
+```
+Если пропустить этот шаг при добавлении/изменении колонок, бот стартует, но
+операции с новыми полями падают с `Unknown column ... in 'field list'`.
+Миграции аддитивные и безопасны; запускать до рестарта сервиса.
+
+### 5) Перезапустить сервис
 ```bash
 systemctl restart nanobananabot
 systemctl is-active nanobananabot
@@ -79,7 +98,7 @@ journalctl -u nanobananabot -n 30 --no-pager
 
 ## Что уже сделано сейчас
 - Код из `~/Desktop/nanobananabot` задеплоен в `/root/nanobananabot`
-- Зависимости проверены (`pip install -r r.txt`)
+- Зависимости установлены через `uv sync --frozen --no-dev`
 - Сервис `nanobananabot` перезапущен и работает (`active`, polling запущен)
 - Image backend переведён на Runware API `https://api.runware.ai/v1`
 - Исправлен runtime-баг импорта `TOPUP_METHODS_TEXT` в `bot/utils/texts.py`

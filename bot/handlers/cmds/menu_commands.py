@@ -160,7 +160,6 @@ async def cmd_friend(
     bot = message.bot
     if bot is None:
         return
-    assert bot is not None
 
     bot_name = (await bot.get_my_name()).name
     ref_link = await create_start_link(
@@ -223,7 +222,6 @@ async def cmd_help(message: Message) -> None:
     bot = message.bot
     if bot is None:
         return
-    assert bot is not None
 
     bot_name = (await bot.get_my_name()).name
     await message.answer(how_text(bot_name), reply_markup=await ik_how_menu())

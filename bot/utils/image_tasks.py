@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+from collections.abc import Awaitable, Callable
 
 import aiohttp
 from runware import IImageInference, Runware
@@ -11,6 +12,56 @@ from bot.settings import se
 from bot.utils.http import get_http_session
 
 logger = logging.getLogger(__name__)
+
+
+def image_generation_error_text(error: Exception) -> str:
+    """Понятный пользователю текст ошибки генерации (без утечки деталей провайдера)."""
+    logger.warning("Public image generation error hidden from user: %s", error)
+
+    raw_error = str(error).lower()
+    if isinstance(error, ImageGenerationTimeoutError):
+        return (
+            "❌ Сейчас генерация заняла слишком много времени.\n\n"
+            "Попробуйте ещё раз через пару минут."
+        )
+
+    # Реальные коды модерации Runware/Google: invalidProviderContent (контент
+    # отклонён провайдером), плюс исторические маркеры. Кредит за такую генерацию
+    # уже возвращён — сообщаем об этом пользователю.
+    moderation_markers = (
+        "prohibited_content",
+        "violated",
+        "invalidprovidercontent",
+        "moderat",  # moderated / moderation
+        "nsfw",
+        "safety",
+        "content policy",
+    )
+    if any(marker in raw_error for marker in moderation_markers):
+        return (
+            "❌ Запрос не прошёл модерацию.\n\n"
+            "Кредит за неудачную генерацию не списан. "
+            "Попробуйте переформулировать описание более нейтрально и без спорных формулировок."
+        )
+
+    if "invalidpositiveprompt" in raw_error or "invalid prompt" in raw_error:
+        return (
+            "❌ Не удалось обработать описание запроса.\n\n"
+            "Кредит не списан. Сформулируйте промпт подробнее и без спецсимволов, "
+            "затем попробуйте снова."
+        )
+
+    if (
+        "заблокировал генерацию изображения" in raw_error
+        or "не вернул изображение" in raw_error
+    ):
+        return (
+            "❌ Не удалось получить изображение по этому запросу.\n\n"
+            "Попробуйте переформулировать запрос, упростить описание или заменить референс."
+        )
+
+    return "❌ Не удалось сгенерировать изображение.\n\nПопробуйте ещё раз чуть позже."
+
 
 ASPECT_RATIO_DIMS: dict[str, tuple[int, int]] = {
     "1:1": (1024, 1024),
@@ -144,6 +195,7 @@ def _build_image_inference_request(
     strength: float = DEFAULT_IMG2IMG_STRENGTH,
     steps: int | None = None,
     cfg_scale: float | None = None,
+    loras: list[dict[str, str | float]] | None = None,
 ) -> IImageInference:
     refs = reference_images or []
     request_kwargs = {
@@ -162,6 +214,8 @@ def _build_image_inference_request(
         request_kwargs["steps"] = steps
     if cfg_scale is not None:
         request_kwargs["CFGScale"] = cfg_scale
+    if loras:
+        request_kwargs["lora"] = loras
 
     if refs:
         if img2img_mode == "seed":
@@ -203,11 +257,17 @@ async def generate_image(
     img2img_mode: str = "reference",
     steps: int | None = None,
     cfg_scale: float | None = None,
+    loras: list[dict[str, str | float]] | None = None,
+    on_civitai_submit: Callable[[str], Awaitable[None]] | None = None,
 ) -> bytes:
     """Generate image via the configured provider.
 
     ``reference_images`` are raw image bytes. For Runware they are encoded as
     base64 data URLs; for Prodia they are sent as multipart input parts.
+
+    ``on_civitai_submit`` пробрасывается в CivitAI-провайдер и вызывается с
+    ``workflow_id`` сразу после отправки — позволяет воркеру сохранить id для
+    возобновления генерации после рестарта.
     """
     if provider == "prodia":
         model_id = model or se.image_backend.model
@@ -223,6 +283,26 @@ async def generate_image(
             output_format=output_format,
             steps=steps,
             guidance_scale=cfg_scale,
+            loras=loras,
+        )
+
+    width, height = _aspect_ratio_to_dims(aspect_ratio, model)
+
+    if provider == "civitai":
+        from bot.utils.civitai_api import generate_image_civitai
+
+        return await generate_image_civitai(
+            prompt=prompt,
+            width=width,
+            height=height,
+            aspect_ratio=aspect_ratio,
+            output_format=output_format,
+            negative_prompt=negative_prompt,
+            steps=steps,
+            cfg_scale=cfg_scale,
+            loras=loras,
+            reference_images=reference_images,
+            on_submit=on_civitai_submit,
         )
 
     if se.image_backend.provider != "runware":
@@ -262,6 +342,7 @@ async def generate_image(
         img2img_mode=img2img_mode,
         steps=steps,
         cfg_scale=cfg_scale,
+        loras=loras,
     )
 
     async with _get_runware_semaphore():

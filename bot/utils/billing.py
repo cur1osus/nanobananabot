@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
-from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, AsyncIterator
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
@@ -12,14 +12,16 @@ from bot.db.models import GenerationTaskModel, UserModel
 from bot.db.redis.user_model import UserRD
 
 if TYPE_CHECKING:
+    from aiogram import Bot
     from redis.asyncio import Redis
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
-# Замок держится не дольше, чем самая долгая генерация (видео ~300с + запас),
-# чтобы при падении процесса он гарантированно протух и не заблокировал юзера.
-LOCK_TTL_SECONDS = 900
+_ACTIVE_STATUSES = (
+    GenerationTaskStatus.QUEUED.value,
+    GenerationTaskStatus.PROCESSING.value,
+)
 
 
 class GenerationBusy(Exception):
@@ -34,79 +36,69 @@ class CreditsExhausted(Exception):
         self.required = required
 
 
-def _lock_key(user_id: int) -> str:
-    return f"genlock:{user_id}"
-
-
-@asynccontextmanager
-async def reserve_generation(
+async def enqueue_generation(
     *,
     session: AsyncSession,
     redis: Redis,
     user: UserRD,
-    cost: int,
     kind: str,
-) -> AsyncIterator[GenerationTaskModel]:
-    """Зарезервировать кредиты под одну генерацию.
+    cost: int,
+    chat_id: int,
+    status_message_id: int | None,
+    params: dict[str, Any],
+) -> GenerationTaskModel:
+    """Поставить генерацию в очередь с гарантией оплаты и переживанием рестарта.
 
-    Последовательность гарантирует, что пользователь не сможет обойти оплату
-    параллельными запросами и что деньги не «потеряются» при сбое:
-
-    1. Берётся персональный Redis-замок (один запуск на пользователя).
-    2. Кредиты списываются атомарно (``WHERE credits >= cost``) ДО генерации.
-    3. Создаётся запись ``GenerationTaskModel`` в статусе ``processing``.
-    4. Тело ``with`` выполняет генерацию и доставку результата.
-    5. При нормальном выходе запись помечается ``success``.
-    6. При любой ошибке кредиты возвращаются, запись — ``refunded``.
+    1. Проверяем, что у пользователя нет другой активной генерации
+       (``queued``/``processing``) — один запуск на пользователя.
+    2. Атомарно списываем кредиты (``WHERE credits >= cost``) ДО постановки.
+    3. Создаём запись ``GenerationTaskModel`` в статусе ``queued`` со всеми
+       параметрами, нужными воркеру для выполнения (в т.ч. после рестарта).
 
     Бросает :class:`GenerationBusy`, если генерация уже идёт, и
-    :class:`CreditsExhausted`, если кредитов не хватило.
+    :class:`CreditsExhausted`, если кредитов не хватило. Проверка «один на
+    пользователя» безопасна без отдельного замка: апдейты одного пользователя
+    сериализуются per-user изоляцией событий aiogram.
     """
-    acquired = await redis.set(
-        _lock_key(user.user_id), b"1", nx=True, ex=LOCK_TTL_SECONDS
+    existing = await session.scalar(
+        select(GenerationTaskModel.id)
+        .where(
+            GenerationTaskModel.user_idpk == user.id,
+            GenerationTaskModel.status.in_(_ACTIVE_STATUSES),
+        )
+        .limit(1)
     )
-    if not acquired:
+    if existing is not None:
         raise GenerationBusy
 
-    task: GenerationTaskModel | None = None
-    try:
-        charged = await charge_user_credits(
-            session=session,
-            redis=redis,
-            user=user,
-            amount=cost,
-        )
-        if not charged:
-            raise CreditsExhausted(cost)
+    # Задачу добавляем в сессию ДО списания: единственный commit внутри
+    # charge_user_credits персистит и списание, и вставку задачи в одной
+    # транзакции. Если вставка падает (или кредитов не хватило) — откатывается
+    # и списание, поэтому кредиты не могут «сгореть» без созданной задачи.
+    task = GenerationTaskModel(
+        user_idpk=user.id,
+        kind=kind,
+        credits_cost=cost,
+        status=GenerationTaskStatus.QUEUED.value,
+        chat_id=chat_id,
+        status_message_id=status_message_id,
+        params=json.dumps(params, ensure_ascii=False),
+    )
+    session.add(task)
 
-        task = GenerationTaskModel(
-            user_idpk=user.id,
-            kind=kind,
-            credits_cost=cost,
-            status=GenerationTaskStatus.PROCESSING.value,
-        )
-        session.add(task)
-        await session.commit()
+    charged = await charge_user_credits(
+        session=session,
+        redis=redis,
+        user=user,
+        amount=cost,
+    )
+    if not charged:
+        raise CreditsExhausted(cost)
 
-        yield task
-
-        task.status = GenerationTaskStatus.SUCCESS.value
-        await session.commit()
-    except BaseException:
-        if task is not None:
-            await _safe_refund(
-                session=session,
-                redis=redis,
-                user=user,
-                task=task,
-                cost=cost,
-            )
-        raise
-    finally:
-        await redis.delete(_lock_key(user.user_id))
+    return task
 
 
-async def _safe_refund(
+async def refund_generation(
     *,
     session: AsyncSession,
     redis: Redis,
@@ -114,6 +106,7 @@ async def _safe_refund(
     task: GenerationTaskModel,
     cost: int,
 ) -> None:
+    """Вернуть кредиты по задаче и пометить её ``refunded`` (idempotent на статусе)."""
     try:
         await refund_user_credits(
             session=session,
@@ -136,13 +129,19 @@ async def recover_orphan_generations(
     *,
     sessionmaker: async_sessionmaker[AsyncSession],
     redis: Redis,
+    bot: Bot | None = None,
 ) -> None:
-    """Вернуть кредиты по генерациям, зависшим в ``processing`` после рестарта.
+    """Восстановить генерации, зависшие в ``processing`` после рестарта.
 
-    Генерации фото/видео выполняются синхронно в процессе бота, поэтому любая
-    запись ``processing`` на старте — это прерванная падением/деплоем задача,
-    деньги за которую нужно вернуть пользователю.
+    - CivitAI с сохранённым ``provider_task_id`` возвращаем в очередь
+      (``queued``): воркфлоу живёт на стороне провайдера, воркер его доопросит
+      и доставит результат без повторного списания.
+    - Остальные (Runware/видео — без возобновляемого id) считаем потерянными:
+      возвращаем кредиты и уведомляем пользователя.
+
+    Задачи в статусе ``queued`` трогать не нужно — воркер подхватит их сам.
     """
+    notify: list[int] = []
     async with sessionmaker() as session:
         stmt = select(GenerationTaskModel).where(
             GenerationTaskModel.status == GenerationTaskStatus.PROCESSING.value
@@ -151,8 +150,14 @@ async def recover_orphan_generations(
         if not orphans:
             return
 
+        resumed = 0
         refunded = 0
         for task in orphans:
+            if task.provider_task_id:
+                task.status = GenerationTaskStatus.QUEUED.value
+                resumed += 1
+                continue
+
             user_db = await session.scalar(
                 select(UserModel).where(UserModel.id == task.user_idpk)
             )
@@ -165,5 +170,22 @@ async def recover_orphan_generations(
                 )
             task.status = GenerationTaskStatus.REFUNDED.value
             refunded += 1
+            if task.chat_id:
+                notify.append(task.chat_id)
         await session.commit()
-        logger.info("Возвращены кредиты по %s прерванным генерациям", refunded)
+        logger.info(
+            "Восстановление генераций: возобновлено %s, возвращено кредитов по %s",
+            resumed,
+            refunded,
+        )
+
+    if bot is not None:
+        for chat_id in notify:
+            try:
+                await bot.send_message(
+                    chat_id,
+                    "⚠️ Генерация была прервана перезапуском сервиса. "
+                    "Кредиты возвращены — попробуйте запустить заново.",
+                )
+            except Exception:
+                logger.warning("Не удалось уведомить чат %s о возврате", chat_id)

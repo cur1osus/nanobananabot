@@ -23,7 +23,9 @@ async def get_manager_loads(
         .group_by(TransactionModel.manager_id)
     )
     rows = await session.execute(stmt)
-    return {manager_id: count for manager_id, count in rows}
+    # Колонка manager_id nullable, поэтому отсекаем None (хотя WHERE in_(...)
+    # их и не вернёт) — это держит тип ключа int и страхует от NULL в данных.
+    return {mid: count for mid, count in rows.all() if mid is not None}
 
 
 def pick_manager_id(

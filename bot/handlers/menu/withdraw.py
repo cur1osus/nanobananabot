@@ -100,6 +100,7 @@ async def withdraw_details(
     user: UserRD,
     session: AsyncSession,
     redis: Redis,
+    bot: Bot,
 ) -> None:
     details = (message.text or "").strip()
     if not details:
@@ -181,7 +182,7 @@ async def withdraw_details(
 
     if manager_id:
         sent = await _notify_manager(
-            bot=message.bot,
+            bot=bot,
             manager_id=manager_id,
             transaction_id=transaction.id,
             user=user,

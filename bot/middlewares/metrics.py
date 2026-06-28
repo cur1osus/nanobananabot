@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Awaitable, Callable
+from typing import Any
+from collections.abc import Awaitable, Callable
 
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
@@ -14,7 +15,7 @@ SLOW_UPDATE_THRESHOLD = 1.0
 
 
 class MetricsMiddleware(BaseMiddleware):
-    async def __call__(  # type: ignore[override]
+    async def __call__(
         self,
         handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
         event: TelegramObject,

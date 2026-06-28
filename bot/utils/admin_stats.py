@@ -63,7 +63,9 @@ async def build_admin_info_text(
         else datetime.now(tz=UTC).replace(tzinfo=None)
     )
     bounds = get_period_bounds(period, now)
-    period_label = "Всё время" if period == "all" else _format_period(bounds.start, bounds.end)
+    period_label = (
+        "Всё время" if period == "all" else _format_period(bounds.start, bounds.end)
+    )
 
     total_users = await session.scalar(select(func.count(UserModel.id))) or 0
     new_users = await _count_users(session, bounds.start, bounds.end)
@@ -188,9 +190,7 @@ def _format_period(start: datetime, end: datetime) -> str:
 
 
 def _supports_balance_endpoint(*, provider: str, base_url: str) -> bool:
-    if provider in ("google", "runware"):
-        return False
-    return True
+    return provider not in ("google", "runware")
 
 
 async def _fetch_all_gpt_balances() -> str:
@@ -306,12 +306,11 @@ async def fetch_runware_account_text() -> str:
     if not isinstance(info, dict):
         return f"Некорректный ответ: {info}"
 
-
     def _get(d: object, *keys: str, default: str = "—") -> str:
         for k in keys:
             if not isinstance(d, dict):
                 return default
-            d = d.get(k, default)  # type: ignore[assignment]
+            d = d.get(k, default)
         return str(d) if d != default else default
 
     org_name = info.get("organizationName") or "—"

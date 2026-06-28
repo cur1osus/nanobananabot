@@ -15,11 +15,18 @@ class ImageModelOption:
     button_label: str
     provider: str = "runware"
     # Дополнительные параметры генерации (используются для 18+ SDXL/Pony моделей).
-    prompt_prefix: str = ""  # дописывается в начало позитивного промпта (score-теги Pony)
+    prompt_prefix: str = (
+        ""  # дописывается в начало позитивного промпта (score-теги Pony)
+    )
     negative_prompt: str = ""  # передаётся как negativePrompt
-    img2img_mode: str = "reference"  # "seed" — классический SDXL img2img через seedImage
+    img2img_mode: str = (
+        "reference"  # "seed" — классический SDXL img2img через seedImage
+    )
     steps: int | None = None  # число шагов; None — дефолт провайдера
     cfg_scale: float | None = None  # CFGScale; None — дефолт провайдера
+    loras: tuple[dict[str, str | float], ...] | None = (
+        None  # LoRA stack: [{"model": str, "weight": float}, ...]
+    )
 
 
 IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
@@ -110,6 +117,22 @@ OTHER_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
 # переопределения steps/guidance (используются дефолты Prodia).
 ADULT_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
     ImageModelOption(
+        key="adult_flux_realistic",
+        title="Реалистичная 18+",
+        api_model="9b",
+        create_api_model="9b",
+        cost=3,
+        details="реализм + Ultra Real V4",
+        button_label="Реалистичная 18+ (3 ген)",
+        provider="civitai",
+        steps=8,
+        cfg_scale=1.5,
+        negative_prompt="ugly, plastic skin, deformed body, bad hands, mutated, blurry, text, watermark",
+        loras=(
+            {"model": "urn:air:flux2:lora:civitai:2462105@2846977", "weight": 0.55},
+        ),
+    ),
+    ImageModelOption(
         key="adult_flux_klein",
         title="Генерация 18+",
         api_model="inference.flux-2.klein.9b.img2img.v1",
@@ -126,7 +149,7 @@ ALL_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
 )
 
 DEFAULT_IMAGE_MODEL_KEY: Final[str] = "standard"
-DEFAULT_ADULT_IMAGE_MODEL_KEY: Final[str] = "adult_flux_klein"
+DEFAULT_ADULT_IMAGE_MODEL_KEY: Final[str] = "adult_flux_realistic"
 
 
 def get_image_model(key: str) -> ImageModelOption:

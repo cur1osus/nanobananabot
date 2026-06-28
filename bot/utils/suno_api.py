@@ -111,7 +111,7 @@ class SunoClient:
                     )
 
                 return response_payload
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        except (TimeoutError, aiohttp.ClientError) as err:
             raise SunoAPIError(f"Ошибка запроса к Suno API: {err}") from err
 
     async def generate_music(

@@ -35,7 +35,9 @@ async def notify_admins_error(
     if context:
         lines.append("\n<b>Контекст:</b>")
         for key, val in context.items():
-            lines.append(f"  • {html.escape(str(key))}: <code>{html.escape(str(val)[:300])}</code>")
+            lines.append(
+                f"  • {html.escape(str(key))}: <code>{html.escape(str(val)[:300])}</code>"
+            )
 
     if tb and "NoneType: None" not in tb:
         short_tb = tb[-_MAX_TB_LEN:]
@@ -52,4 +54,6 @@ async def notify_admins_error(
         try:
             await bot.send_message(admin_id, text)
         except Exception as exc:
-            logger.warning("Не удалось отправить уведомление админу %s: %s", admin_id, exc)
+            logger.warning(
+                "Не удалось отправить уведомление админу %s: %s", admin_id, exc
+            )

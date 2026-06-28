@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 
 class ThrowDBSessionMiddleware(BaseMiddleware):
-    async def __call__(  # pyright: ignore
+    async def __call__(  # type: ignore[override]  # narrowed event type by design
         self,
         handler: Callable[[Message, dict[str, Any]], Awaitable[Any]],
         event: Message,

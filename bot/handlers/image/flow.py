@@ -3,11 +3,10 @@ from __future__ import annotations
 import logging
 import uuid
 
-import aiohttp
 from aiogram import F, Router
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,17 +19,18 @@ from bot.keyboards.factories import (
     ModelGroupSwitch,
     ModelMenu,
     ModelSelect,
+    SelectScenario,
 )
 from bot.keyboards.inline import (
     ik_back_home,
     ik_create_aspect_ratio,
     ik_create_prompt_nav,
     ik_image_model_select,
-    ik_image_result_actions,
     ik_image_waiting_photos,
     ik_model_select_for_key,
     ik_other_image_model_select,
     ik_prompt_nav,
+    ik_scenario_select,
 )
 from bot.states import BaseUserState, ImageGenerationState
 from bot.utils.image_models import (
@@ -40,18 +40,11 @@ from bot.utils.image_models import (
     is_image_model_key,
 )
 from bot.utils.image_state import get_image_data, update_image_data
-from bot.utils.http import get_http_session
-from bot.utils.image_tasks import (
-    ImageGenerationError,
-    ImageGenerationTimeoutError,
-    closest_aspect_ratio,
-    generate_image,
-)
-from bot.utils.admin_notify import notify_admins_error
+from bot.utils.image_tasks import closest_aspect_ratio
 from bot.utils.billing import (
     CreditsExhausted,
     GenerationBusy,
-    reserve_generation,
+    enqueue_generation,
 )
 from bot.utils.messaging import edit_or_answer
 from bot.utils.speech_recognition import (
@@ -103,96 +96,6 @@ def _photo_request_text(model_key: str) -> str:
     return f"Пришлите 1-{max_refs} фотографий которые нужно изменить или объединить"
 
 
-async def _download_telegram_file(bot_token: str, file_path: str) -> bytes:
-    url = f"https://api.telegram.org/file/bot{bot_token}/{file_path}"
-    timeout = aiohttp.ClientTimeout(total=60)
-    session = get_http_session()
-    async with session.get(url, timeout=timeout) as response:
-        response.raise_for_status()
-        return await response.read()
-
-
-async def _build_reference_images(
-    message: Message, photo_ids: list[str]
-) -> list[bytes]:
-    bot = message.bot
-    if bot is None:
-        return []
-
-    bot_token = getattr(bot, "token", "")
-    if not bot_token:
-        return []
-
-    images: list[bytes] = []
-    for file_id in photo_ids[:10]:
-        try:
-            file = await bot.get_file(file_id)
-            if not file.file_path:
-                continue
-            image_bytes = await _download_telegram_file(bot_token, file.file_path)
-            images.append(image_bytes)
-        except Exception:
-            logger.exception("Failed to prepare image reference: file_id=%s", file_id)
-
-    return images
-
-
-def _generation_error_text(error: Exception) -> str:
-    logger.warning("Public image generation error hidden from user: %s", error)
-
-    raw_error = str(error).lower()
-    if isinstance(error, ImageGenerationTimeoutError):
-        return (
-            "❌ Сейчас генерация заняла слишком много времени.\n\n"
-            "Попробуйте ещё раз через пару минут."
-        )
-
-    if "prohibited_content" in raw_error or "violated" in raw_error:
-        return (
-            "❌ Не удалось выполнить генерацию по этому запросу.\n\n"
-            "Попробуйте переформулировать описание более нейтрально и без спорных формулировок."
-        )
-
-    if (
-        "заблокировал генерацию изображения" in raw_error
-        or "не вернул изображение" in raw_error
-    ):
-        return (
-            "❌ Не удалось получить изображение по этому запросу.\n\n"
-            "Попробуйте переформулировать запрос, упростить описание или заменить референс."
-        )
-
-    return "❌ Не удалось сгенерировать изображение.\n\nПопробуйте ещё раз чуть позже."
-
-
-async def _send_generation_result(
-    message: Message,
-    *,
-    image_bytes: bytes,
-    model_key: str,
-    model_title: str,
-    model_cost: int,
-    task_id: str,
-    show_result_actions: bool = True,
-) -> None:
-    filename = f"generation_{task_id}_{model_key}.jpg"
-    await message.answer_document(
-        document=BufferedInputFile(file=image_bytes, filename=filename),
-        caption="📎 Файл результата",
-    )
-    # В 18+ название модели не показываем.
-    model_line = "" if is_adult_model_key(model_key) else f"🎨 Модель: {model_title}\n"
-    await message.answer_photo(
-        photo=BufferedInputFile(file=image_bytes, filename="preview.jpg"),
-        caption=f"✅ Готово!\n{model_line}💰 Списано: {model_cost} кредитов",
-        reply_markup=(
-            await ik_image_result_actions()
-            if show_result_actions
-            else await ik_back_home()
-        ),
-    )
-
-
 async def _run_image_generation(
     *,
     message: Message,
@@ -202,6 +105,12 @@ async def _run_image_generation(
     redis: Redis,
     prompt: str,
 ) -> None:
+    """Поставить генерацию-редактирование в очередь и сразу освободить чат.
+
+    Тяжёлая работа (скачивание референсов, вызов провайдера, доставка) делается
+    воркером (см. bot/utils/generation_runner.py), поэтому хендлер не держит
+    per-user изоляцию событий и пользователь может продолжать пользоваться ботом.
+    """
     normalized_prompt = prompt.strip()
     if not normalized_prompt:
         await message.answer("Опишите запрос текстом.")
@@ -222,85 +131,50 @@ async def _run_image_generation(
         await state.set_state(ImageGenerationState.waiting_photos)
         return
 
-    task_id = uuid.uuid4().hex[:8]
-    status_msg = await message.answer(generation_started_text(task_id, data.model_key))
-
-    positive_prompt = f"{model.prompt_prefix}{normalized_prompt}".strip()
+    display_id = uuid.uuid4().hex[:8]
+    status_msg = await message.answer(
+        generation_started_text(display_id, data.model_key)
+    )
 
     try:
-        async with reserve_generation(
+        await enqueue_generation(
             session=session,
             redis=redis,
             user=user,
-            cost=model.cost,
             kind=GenerationKind.IMAGE_EDIT.value,
-        ):
-            reference_images = await _build_reference_images(message, data.photos)
-            image_bytes = await generate_image(
-                prompt=positive_prompt,
-                model=model.api_model,
-                provider=model.provider,
-                reference_images=reference_images,
-                aspect_ratio=data.aspect_ratio,
-                output_format="jpeg",
-                negative_prompt=model.negative_prompt or None,
-                img2img_mode=model.img2img_mode,
-                steps=model.steps,
-                cfg_scale=model.cfg_scale,
-            )
-            await _send_generation_result(
-                message,
-                image_bytes=image_bytes,
-                model_key=data.model_key,
-                model_title=model.title,
-                model_cost=model.cost,
-                task_id=task_id,
-            )
-        await update_image_data(
-            state,
-            prompt=normalized_prompt,
-            prompt_requested=True,
+            cost=model.cost,
+            chat_id=message.chat.id,
+            status_message_id=status_msg.message_id,
+            params={
+                "model_key": data.model_key,
+                "prompt": normalized_prompt,
+                "aspect_ratio": data.aspect_ratio,
+                "photos": list(data.photos),
+            },
         )
-        await state.set_state(ImageGenerationState.waiting_prompt)
-        await status_msg.delete()
     except GenerationBusy:
         await status_msg.edit_text(
             "⏳ Предыдущая генерация ещё выполняется. Дождитесь результата и попробуйте снова."
         )
+        return
     except CreditsExhausted:
         await status_msg.edit_text(
             f"Недостаточно кредитов для генерации. Нужно: {model.cost}."
         )
-    except ImageGenerationError as e:
-        logger.exception("Image generation API error")
-        await status_msg.edit_text(_generation_error_text(e))
-        if message.bot:
-            await notify_admins_error(
-                message.bot,
-                "Ошибка генерации изображения (редактирование)",
-                e,
-                context={
-                    "user_id": user.user_id,
-                    "model": model.api_model,
-                    "refs": len(data.photos),
-                    "prompt": normalized_prompt[:200],
-                },
-            )
-    except Exception as e:
-        logger.exception("Unexpected image generation error")
-        await status_msg.edit_text(_generation_error_text(e))
-        if message.bot:
-            await notify_admins_error(
-                message.bot,
-                "Неожиданная ошибка генерации изображения (редактирование)",
-                e,
-                context={
-                    "user_id": user.user_id,
-                    "model": model.api_model,
-                    "refs": len(data.photos),
-                    "prompt": normalized_prompt[:200],
-                },
-            )
+        return
+    except Exception:
+        logger.exception("Не удалось поставить генерацию-редактирование в очередь")
+        await status_msg.edit_text(
+            "❌ Не удалось запустить генерацию. Попробуйте ещё раз."
+        )
+        return
+
+    await update_image_data(
+        state,
+        prompt=normalized_prompt,
+        prompt_requested=True,
+    )
+    await state.set_state(ImageGenerationState.waiting_prompt)
 
 
 async def _run_create_generation(
@@ -312,6 +186,7 @@ async def _run_create_generation(
     redis: Redis,
     prompt: str,
 ) -> None:
+    """Поставить генерацию-создание (text-to-image) в очередь, не блокируя чат."""
     normalized_prompt = prompt.strip()
     if not normalized_prompt:
         await message.answer("Опишите запрос текстом.")
@@ -326,84 +201,50 @@ async def _run_create_generation(
         )
         return
 
-    task_id = uuid.uuid4().hex[:8]
-    status_msg = await message.answer(generation_started_text(task_id, data.model_key))
-
-    positive_prompt = f"{model.prompt_prefix}{normalized_prompt}".strip()
+    display_id = uuid.uuid4().hex[:8]
+    status_msg = await message.answer(
+        generation_started_text(display_id, data.model_key)
+    )
 
     try:
-        async with reserve_generation(
+        await enqueue_generation(
             session=session,
             redis=redis,
             user=user,
-            cost=model.cost,
             kind=GenerationKind.IMAGE_CREATE.value,
-        ):
-            image_bytes = await generate_image(
-                prompt=positive_prompt,
-                model=model.create_api_model,
-                provider=model.provider,
-                reference_images=None,
-                aspect_ratio=data.aspect_ratio,
-                output_format="jpeg",
-                negative_prompt=model.negative_prompt or None,
-                img2img_mode=model.img2img_mode,
-                steps=model.steps,
-                cfg_scale=model.cfg_scale,
-            )
-            await _send_generation_result(
-                message,
-                image_bytes=image_bytes,
-                model_key=data.model_key,
-                model_title=model.title,
-                model_cost=model.cost,
-                task_id=task_id,
-                show_result_actions=False,
-            )
-        await update_image_data(
-            state,
-            prompt=normalized_prompt,
-            photos=[],
-            prompt_requested=True,
+            cost=model.cost,
+            chat_id=message.chat.id,
+            status_message_id=status_msg.message_id,
+            params={
+                "model_key": data.model_key,
+                "prompt": normalized_prompt,
+                "aspect_ratio": data.aspect_ratio,
+            },
         )
-        await state.set_state(ImageGenerationState.waiting_create_prompt)
-        await status_msg.delete()
     except GenerationBusy:
         await status_msg.edit_text(
             "⏳ Предыдущая генерация ещё выполняется. Дождитесь результата и попробуйте снова."
         )
+        return
     except CreditsExhausted:
         await status_msg.edit_text(
             f"Недостаточно кредитов для генерации. Нужно: {model.cost}."
         )
-    except ImageGenerationError as e:
-        logger.exception("Create image API error")
-        await status_msg.edit_text(_generation_error_text(e))
-        if message.bot:
-            await notify_admins_error(
-                message.bot,
-                "Ошибка генерации изображения (создание)",
-                e,
-                context={
-                    "user_id": user.user_id,
-                    "model": model.create_api_model,
-                    "prompt": normalized_prompt[:200],
-                },
-            )
-    except Exception as e:
-        logger.exception("Unexpected create image error")
-        await status_msg.edit_text(_generation_error_text(e))
-        if message.bot:
-            await notify_admins_error(
-                message.bot,
-                "Неожиданная ошибка генерации изображения (создание)",
-                e,
-                context={
-                    "user_id": user.user_id,
-                    "model": model.create_api_model,
-                    "prompt": normalized_prompt[:200],
-                },
-            )
+        return
+    except Exception:
+        logger.exception("Не удалось поставить генерацию-создание в очередь")
+        await status_msg.edit_text(
+            "❌ Не удалось запустить генерацию. Попробуйте ещё раз."
+        )
+        return
+
+    await update_image_data(
+        state,
+        prompt=normalized_prompt,
+        photos=[],
+        prompt_requested=True,
+    )
+    await state.set_state(ImageGenerationState.waiting_create_prompt)
 
 
 @router.callback_query(ModelMenu.filter())
@@ -550,6 +391,17 @@ async def handle_image_nav(
         )
         return
 
+    if callback_data.action == "to_prompt":
+        await state.set_state(ImageGenerationState.waiting_prompt)
+        await query.answer()
+        prompt_text = ADULT_PROMPT_REQUEST_TEXT if is_adult else PROMPT_REQUEST_TEXT
+        await edit_or_answer(
+            query,
+            text=prompt_text,
+            reply_markup=await ik_prompt_nav(is_adult=is_adult),
+        )
+        return
+
     await query.answer("Неизвестное действие", show_alert=True)
 
 
@@ -620,6 +472,47 @@ async def handle_result_actions(
     await query.answer("Неизвестное действие", show_alert=True)
 
 
+@router.callback_query(SelectScenario.filter())
+async def handle_scenario_select(
+    query: CallbackQuery,
+    callback_data: SelectScenario,
+    state: FSMContext,
+    user: UserRD,
+    session: AsyncSession,
+    redis: Redis,
+) -> None:
+    if callback_data.action == "select":
+        if not callback_data.key:
+            await query.answer()
+            await edit_or_answer(
+                query,
+                text="Выберите сценарий:",
+                reply_markup=await ik_scenario_select(),
+            )
+            return
+
+        from bot.utils.image_scenarios import EDIT_SCENARIOS
+
+        for sc in EDIT_SCENARIOS:
+            if sc.key == callback_data.key:
+                await query.answer()
+                await query.message.delete()
+                if isinstance(query.message, Message):
+                    await _run_image_generation(
+                        message=query.message,
+                        state=state,
+                        user=user,
+                        session=session,
+                        redis=redis,
+                        prompt=sc.prompt,
+                    )
+                return
+        await query.answer("Неизвестный сценарий", show_alert=True)
+        return
+
+    await query.answer()
+
+
 @router.message(ImageGenerationState.waiting_photos, F.photo)
 @router.message(ImageGenerationState.waiting_prompt, F.photo)
 @router.message(
@@ -642,6 +535,8 @@ async def collect_photos(
     if len(photos) >= max_references:
         await message.answer(f"Можно отправить максимум {max_references} фото.")
         return
+    width: int | None
+    height: int | None
     if message.photo:
         photo_size = message.photo[-1]
         file_id = photo_size.file_id
@@ -667,7 +562,9 @@ async def collect_photos(
         )
         await message.answer(
             prompt_text,
-            reply_markup=await ik_prompt_nav(),
+            reply_markup=await ik_prompt_nav(
+                is_adult=is_adult_model_key(data.model_key)
+            ),
         )
         await state.set_state(ImageGenerationState.waiting_prompt)
 

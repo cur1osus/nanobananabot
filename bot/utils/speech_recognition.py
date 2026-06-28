@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import tempfile
 from pathlib import Path
@@ -10,6 +11,7 @@ from aiogram.types import Message
 from openai import AsyncOpenAI
 
 from bot.settings import se
+from bot.utils.http import get_http_session
 
 
 class SpeechRecognitionError(Exception):
@@ -42,7 +44,9 @@ class SpeechRecognitionAgent:
         response_format: str = "json",
     ) -> str:
         path = Path(file_path)
-        if not path.is_file():
+        # Один stat() ничтожен на фоне последующей сетевой загрузки файла —
+        # выносить его в поток дороже самой проверки.
+        if not path.is_file():  # noqa: ASYNC240
             raise SpeechRecognitionError(f"Audio file not found: {path}")
 
         params = {
@@ -53,7 +57,9 @@ class SpeechRecognitionAgent:
         if language:
             params["language"] = language
 
-        transcription = await self.client.audio.transcriptions.create(**params)
+        # response_format здесь динамический str, поэтому mypy не может выбрать
+        # перегрузку SDK (они ключуются на Literal). Вызов корректен в рантайме.
+        transcription = await self.client.audio.transcriptions.create(**params)  # type: ignore[call-overload]
         text = _extract_text(transcription)
         if not text:
             raise SpeechRecognitionError("Empty transcription response.")
@@ -93,25 +99,24 @@ def _extract_audio_file_id(message: Message) -> str | None:
 async def _download_telegram_file(bot_token: str, file_path: str) -> bytes:
     url = f"https://api.telegram.org/file/bot{bot_token}/{file_path}"
     timeout = aiohttp.ClientTimeout(total=60)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url) as response:
-            response.raise_for_status()
-            return await response.read()
+    # Общий ClientSession переиспользует пул соединений/TLS вместо создания
+    # новой сессии (и хендшейка) на каждое скачивание голосового.
+    session = get_http_session()
+    async with session.get(url, timeout=timeout) as response:
+        response.raise_for_status()
+        return await response.read()
 
 
 def _write_temp_audio_file(audio_bytes: bytes, suffix: str) -> str:
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    temp_file.write(audio_bytes)
-    temp_file.flush()
-    temp_file.close()
-    return temp_file.name
+    # delete=False: файл переживает функцию и удаляется позже в _cleanup_temp_file.
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+        temp_file.write(audio_bytes)
+        return temp_file.name
 
 
 def _cleanup_temp_file(path: str) -> None:
-    try:
+    with contextlib.suppress(OSError):
         os.remove(path)
-    except OSError:
-        pass
 
 
 async def transcribe_message_audio(
@@ -123,12 +128,16 @@ async def transcribe_message_audio(
     if not file_id:
         raise SpeechRecognitionError("Message does not contain audio or voice.")
 
-    file = await message.bot.get_file(file_id)
+    bot = message.bot
+    if bot is None:
+        raise SpeechRecognitionError("Bot instance is not bound to the message.")
+
+    file = await bot.get_file(file_id)
     file_path = file.file_path or ""
     if not file_path:
         raise SpeechRecognitionError("Telegram file path is empty.")
 
-    bot_token = getattr(message.bot, "token", "")
+    bot_token = getattr(bot, "token", "")
     if not bot_token:
         raise SpeechRecognitionError("Bot token is not available for download.")
 

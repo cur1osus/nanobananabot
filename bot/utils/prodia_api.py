@@ -7,6 +7,7 @@ import logging
 import aiohttp
 
 from bot.settings import se
+from bot.utils.http import get_http_session
 from bot.utils.image_tasks import (
     ImageGenerationError,
     ImageGenerationTimeoutError,
@@ -42,6 +43,7 @@ def _build_job_config(
     image_filenames: list[str],
     steps: int | None,
     guidance_scale: float | None,
+    loras: list[dict[str, str | float]] | None = None,
 ) -> dict:
     config: dict = {"prompt": prompt}
     if image_filenames:
@@ -56,6 +58,10 @@ def _build_job_config(
         config["steps"] = steps
     if guidance_scale is not None:
         config["guidance_scale"] = guidance_scale
+    if loras:
+        config["loras"] = [
+            lora["model"] if isinstance(lora, dict) else lora for lora in loras
+        ]
     return {"type": model_id, "config": config}
 
 
@@ -80,6 +86,7 @@ async def generate_image_prodia(
     output_format: str = "jpeg",
     steps: int | None = None,
     guidance_scale: float | None = None,
+    loras: list[dict[str, str | float]] | None = None,
 ) -> bytes:
     """Generate image via Prodia /v2/job (synchronous, returns binary image).
 
@@ -103,6 +110,7 @@ async def generate_image_prodia(
         image_filenames=image_filenames,
         steps=steps,
         guidance_scale=guidance_scale,
+        loras=loras,
     )
 
     headers = {
@@ -120,75 +128,77 @@ async def generate_image_prodia(
     request_timeout = aiohttp.ClientTimeout(total=se.prodia.timeout)
     max_attempts = se.prodia.rate_limit_retries + 1
 
+    # Общий ClientSession переиспользует пул соединений/TLS — заголовки и таймаут
+    # задаём на уровне запроса, чтобы не плодить сессию на каждый вызов.
+    session = get_http_session()
+
     async with _get_prodia_semaphore():
         try:
             async with asyncio.timeout(se.prodia.total_timeout):
-                async with aiohttp.ClientSession(
-                    timeout=request_timeout, headers=headers
-                ) as session:
-                    for attempt in range(max_attempts):
-                        if refs:
-                            form = aiohttp.FormData()
+                for attempt in range(max_attempts):
+                    if refs:
+                        form = aiohttp.FormData()
+                        form.add_field(
+                            "job",
+                            json.dumps(job),
+                            filename="job.json",
+                            content_type="application/json",
+                        )
+                        for filename, data in zip(image_filenames, refs, strict=True):
                             form.add_field(
-                                "job",
-                                json.dumps(job),
-                                filename="job.json",
-                                content_type="application/json",
+                                "input",
+                                data,
+                                filename=filename,
+                                content_type="image/jpeg",
                             )
-                            for filename, data in zip(image_filenames, refs):
-                                form.add_field(
-                                    "input",
-                                    data,
-                                    filename=filename,
-                                    content_type="image/jpeg",
-                                )
-                            request_ctx = session.post(url, data=form)
-                        else:
-                            request_ctx = session.post(url, json=job)
+                        request_ctx = session.post(
+                            url, data=form, headers=headers, timeout=request_timeout
+                        )
+                    else:
+                        request_ctx = session.post(
+                            url, json=job, headers=headers, timeout=request_timeout
+                        )
 
-                        async with request_ctx as response:
-                            if response.status == 200:
-                                content_type = response.headers.get("Content-Type", "")
-                                if content_type.startswith("image/"):
-                                    return await response.read()
-                                # Неожиданно вернулся JSON вместо картинки.
-                                message = await _parse_error_message(response)
-                                raise ImageGenerationError(
-                                    f"Prodia вернул не изображение: {message}"
-                                )
-
-                            # 429 (rate limit) и 5xx (временные сбои Prodia,
-                            # напр. "connection reset by peer" между их бэкендами)
-                            # повторяемы — ретраим с backoff.
-                            is_retryable = (
-                                response.status == 429 or response.status >= 500
-                            )
-                            if is_retryable and attempt + 1 < max_attempts:
-                                retry_after = response.headers.get("Retry-After")
-                                delay = (
-                                    float(retry_after)
-                                    if retry_after and retry_after.isdigit()
-                                    else se.prodia.rate_limit_backoff * (attempt + 1)
-                                )
-                                logger.warning(
-                                    "Prodia %d, retry in %.1fs (attempt %d/%d)",
-                                    response.status,
-                                    delay,
-                                    attempt + 1,
-                                    max_attempts,
-                                )
-                                await asyncio.sleep(delay)
-                                continue
-
+                    async with request_ctx as response:
+                        if response.status == 200:
+                            content_type = response.headers.get("Content-Type", "")
+                            if content_type.startswith("image/"):
+                                return await response.read()
+                            # Неожиданно вернулся JSON вместо картинки.
                             message = await _parse_error_message(response)
                             raise ImageGenerationError(
-                                f"Ошибка Prodia ({response.status}): {message}"
+                                f"Prodia вернул не изображение: {message}"
                             )
 
-                    raise ImageGenerationError(
-                        "Prodia: исчерпаны попытки из-за загрузки сервиса "
-                        "(429/5xx)."
-                    )
+                        # 429 (rate limit) и 5xx (временные сбои Prodia,
+                        # напр. "connection reset by peer" между их бэкендами)
+                        # повторяемы — ретраим с backoff.
+                        is_retryable = response.status == 429 or response.status >= 500
+                        if is_retryable and attempt + 1 < max_attempts:
+                            retry_after = response.headers.get("Retry-After")
+                            delay = (
+                                float(retry_after)
+                                if retry_after and retry_after.isdigit()
+                                else se.prodia.rate_limit_backoff * (attempt + 1)
+                            )
+                            logger.warning(
+                                "Prodia %d, retry in %.1fs (attempt %d/%d)",
+                                response.status,
+                                delay,
+                                attempt + 1,
+                                max_attempts,
+                            )
+                            await asyncio.sleep(delay)
+                            continue
+
+                        message = await _parse_error_message(response)
+                        raise ImageGenerationError(
+                            f"Ошибка Prodia ({response.status}): {message}"
+                        )
+
+                raise ImageGenerationError(
+                    "Prodia: исчерпаны попытки из-за загрузки сервиса (429/5xx)."
+                )
         except TimeoutError as exc:
             logger.warning(
                 "Prodia generation exceeded total timeout: model=%s total_timeout=%ss",

@@ -17,7 +17,7 @@ TG_SERVICE_USER_ID: Final[int] = 777000
 
 
 class ThrowUserMiddleware(BaseMiddleware):
-    async def __call__(  # pyright: ignore
+    async def __call__(  # type: ignore[override]  # narrowed event type by design
         self,
         handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
         event: Update,
@@ -28,27 +28,18 @@ class ThrowUserMiddleware(BaseMiddleware):
         if not user:
             return None
 
-        match event.event_type:
-            case "message":
-                if user.is_bot is False and user.id != TG_SERVICE_USER_ID:
-                    user_model = await get_user_model(
-                        db_pool=data["sessionmaker"],
-                        redis=data["redis"],
-                        user=user,
-                    )
-                    await user_model.update_last_active(data["redis"])
-                    data["user"] = user_model
-            case "callback_query":
-                if user.is_bot is False and user.id != TG_SERVICE_USER_ID:
-                    user_model = await get_user_model(
-                        db_pool=data["sessionmaker"],
-                        redis=data["redis"],
-                        user=user,
-                    )
-                    await user_model.update_last_active(data["redis"])
-                    data["user"] = user_model
-
-            case _:
-                pass
+        if (
+            event.event_type in ("message", "callback_query")
+            and not user.is_bot
+            and user.id != TG_SERVICE_USER_ID
+        ):
+            redis = data["redis"]
+            user_model = await get_user_model(
+                db_pool=data["sessionmaker"],
+                redis=redis,
+                user=user,
+            )
+            await user_model.update_last_active(redis)
+            data["user"] = user_model
 
         return await handler(event, data)

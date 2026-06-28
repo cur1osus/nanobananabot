@@ -83,3 +83,8 @@ class VideoAspectRatio(CallbackData, prefix="video_ratio"):
 
 class VideoNav(CallbackData, prefix="video_nav"):
     action: str
+
+
+class SelectScenario(CallbackData, prefix="scenario"):
+    action: str  # "select" | "cancel"
+    key: str = ""
