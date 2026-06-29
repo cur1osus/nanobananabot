@@ -10,6 +10,8 @@ class EditScenario:
     title: str
     prompt: str
     details: str
+    strength: float | None = None
+    steps: int | None = None
 
 
 EDIT_SCENARIOS: Final[tuple[EditScenario, ...]] = (
@@ -24,71 +26,24 @@ EDIT_SCENARIOS: Final[tuple[EditScenario, ...]] = (
             "natural skin texture, detailed skin, realistic anatomy, high detail photography"
         ),
         details="вся одежда убрана",
-    ),
-    EditScenario(
-        key="missionary",
-        title="Миссионерская поза",
-        prompt=(
-            "Preserve exactly the face, facial features, body shape, proportions, skin tone, "
-            "hair color and style from the reference photo, completely unchanged identity, "
-            "only change pose to missionary position lying on back, legs spread apart, "
-            "man on top engaging in sexual intercourse, "
-            "realistic skin texture, natural skin tone, "
-            "realistic anatomy, detailed bodies, high detail photography"
-        ),
-        details="женщина снизу, мужчина сверху",
-    ),
-    EditScenario(
-        key="cowgirl",
-        title="Наездница",
-        prompt=(
-            "Preserve exactly the face, facial features, body shape, proportions, skin tone, "
-            "hair color and style from the reference photo, completely unchanged identity, "
-            "only change pose to cowgirl position sitting on top riding a man lying underneath, "
-            "woman looking down at him, sexual intercourse, "
-            "realistic skin texture with natural highlights, "
-            "natural body proportions, "
-            "realistic anatomy, detailed skin, high detail photography"
-        ),
-        details="женщина сверху",
-    ),
-    EditScenario(
-        key="doggy",
-        title="Ракурс сзади",
-        prompt=(
-            "Preserve exactly the face, facial features, body shape, proportions, skin tone, "
-            "hair color and style from the reference photo, completely unchanged identity, "
-            "only change pose to doggy style on all fours, back arched, "
-            "man behind engaging in sexual intercourse from behind, "
-            "realistic skin texture with natural shadows, "
-            "realistic anatomy, high detail photography"
-        ),
-        details="коленно-локтевая поза",
-    ),
-    EditScenario(
-        key="blowjob",
-        title="Минет",
-        prompt=(
-            "Preserve exactly the face, facial features, body shape, skin tone, "
-            "hair color and style from the reference photo, completely unchanged identity, "
-            "only change pose to woman kneeling giving oral sex to a man standing before her, "
-            "close-up, realistic skin texture with detailed lips, "
-            "natural skin texture, realistic anatomy, detailed photography"
-        ),
-        details="оральный секс",
+        strength=0.70,
     ),
     EditScenario(
         key="topless",
         title="Топлес",
         prompt=(
             "Preserve exactly the face, facial features, body shape, proportions, skin tone, "
-            "hair color and style from the reference photo, completely unchanged identity, "
-            "only remove top clothing exposing bare breasts, topless, no bra, "
-            "natural skin texture with visible pores, "
-            "realistic skin texture, natural lighting, subtle imperfections, "
-            "realistic anatomy, high detail photography"
+            "hair color and style from the reference photo of the woman, completely unchanged identity. "
+            "Remove her top completely exposing her bare breasts, topless, no bra, "
+            "her perfect natural round breasts fully visible, "
+            "her nipples hard and erect, realistic areola detail, "
+            "natural skin texture with visible pores and subtle imperfections, "
+            "soft natural light caressing her chest, her skin glowing, "
+            "detailed breast anatomy, realistic veins and skin folds, "
+            "cinematic portrait, high detail photography, sharp focus"
         ),
         details="обнажённая грудь",
+        strength=0.68,
     ),
     EditScenario(
         key="lingerie",
@@ -96,25 +51,13 @@ EDIT_SCENARIOS: Final[tuple[EditScenario, ...]] = (
         prompt=(
             "Preserve exactly the face, facial features, body shape, proportions, skin tone, "
             "hair color and style from the reference photo, completely unchanged identity, "
-            "only change to wearing sexy lace lingerie set, matching bra and panties, "
+            "only change to wearing a thong, minimal g-string, "
             "seductive pose, "
-            "detailed fabric texture on lace, "
+            "detailed fabric texture, "
             "natural skin texture, realistic body, "
-            "luxurious lingerie details, high detail photography"
+            "high detail photography"
         ),
         details="кружевной комплект белья",
-    ),
-    EditScenario(
-        key="masturbation",
-        title="Мастурбация",
-        prompt=(
-            "Preserve exactly the face, facial features, body shape, proportions, skin tone, "
-            "hair color and style from the reference photo, completely unchanged identity, "
-            "only change to lying down touching herself, legs spread apart, "
-            "solo masturbation, close-up, sensual expression, "
-            "realistic skin texture, natural skin tone, "
-            "realistic anatomy, detailed skin, high detail photography"
-        ),
-        details="женщина ласкает себя",
+        strength=0.70,
     ),
 )

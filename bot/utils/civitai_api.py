@@ -12,6 +12,31 @@ from bot.utils.image_tasks import ImageGenerationError, ImageGenerationTimeoutEr
 
 logger = logging.getLogger(__name__)
 
+
+async def _translate_prompt(prompt: str) -> str:
+    """Перевести промпт на английский через Google Translate.
+
+    Если перевод не нужен или не удался — возвращает оригинал.
+    """
+    from deep_translator import GoogleTranslator
+
+    try:
+        translated = await asyncio.to_thread(
+            GoogleTranslator(source="auto", target="en").translate, prompt
+        )
+        if translated and translated.strip():
+            logger.info(
+                "Translated prompt (%d chars → %d chars)",
+                len(prompt),
+                len(translated),
+            )
+            return translated.strip()
+    except Exception:
+        logger.exception("Translation failed, falling back to original prompt")
+
+    return prompt
+
+
 CIVITAI_WORKFLOW_URL = f"{se.civitai.base_url}/v2/consumer/workflows"
 CIVITAI_POLL_INTERVAL = 10
 
@@ -36,6 +61,7 @@ def _build_workflow_request(
     negative_prompt: str | None = None,
     loras: list[dict[str, str | float]] | None = None,
     reference_images: list[str] | None = None,
+    strength: float | None = None,
 ) -> dict:
     operation = "editImage" if reference_images else "createImage"
     step_input: dict = {
@@ -59,6 +85,9 @@ def _build_workflow_request(
         step_input["steps"] = steps
     if negative_prompt:
         step_input["negativePrompt"] = negative_prompt
+
+    if strength is not None:
+        step_input["strength"] = strength
 
     if loras:
         step_input["loras"] = {
@@ -107,6 +136,7 @@ async def generate_image_civitai(
     cfg_scale: float | None = None,
     loras: list[dict[str, str | float]] | None = None,
     reference_images: list[bytes] | None = None,
+    strength: float | None = None,
     on_submit: collections.abc.Callable[[str], collections.abc.Awaitable[None]]
     | None = None,
 ) -> bytes:
@@ -118,6 +148,8 @@ async def generate_image_civitai(
     """
     if not se.civitai.api_key:
         raise ImageGenerationError("Не настроен ключ Civitai (CIVITAI_API_KEY).")
+
+    prompt = await _translate_prompt(prompt)
 
     from bot.utils.image_tasks import ASPECT_RATIO_DIMS, _bytes_to_data_url
 
@@ -140,6 +172,7 @@ async def generate_image_civitai(
         negative_prompt=negative_prompt,
         loras=loras,
         reference_images=ref_urls,
+        strength=strength,
     )
 
     headers = {

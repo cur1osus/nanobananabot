@@ -265,6 +265,19 @@ wheels = [
 ]
 
 [[package]]
+name = "beautifulsoup4"
+version = "4.15.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "soupsieve" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/43/65/318323f98dbee45d42dff61d8f047181bc6f2268a9068cfad035a46be5af/beautifulsoup4-4.15.0.tar.gz", hash = "sha256:288e3ca7d54b06f2ac191970bc275c1939cb46d450b255bf6718b04aa37ab4f7", size = 632571, upload-time = "2026-06-07T16:44:20.453Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/88/c6/92fcd42f1ba33e1184263f25bfabf3d27c383410470f169e4b8163bf9c17/beautifulsoup4-4.15.0-py3-none-any.whl", hash = "sha256:d6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9", size = 109924, upload-time = "2026-06-07T16:44:21.566Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -492,6 +505,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/e8/15/795d1c0bf7844fc2ffd680b76b8ab8c2ba6457dbe679a6cb6ff2e959ffa5/curl_cffi-0.6.4-cp38-abi3-musllinux_1_1_x86_64.whl", hash = "sha256:59ab786e34447b28ae268ddc9751033530022cf81617d03aae063ccc94c82363", size = 5371569, upload-time = "2024-05-14T04:14:40.193Z" },
     { url = "https://files.pythonhosted.org/packages/29/65/439afd8367571df1912fcf0f8f2e61fc2b91d87f4d549c9e357d3c330929/curl_cffi-0.6.4-cp38-abi3-win32.whl", hash = "sha256:583d06ec082cde9af292c0de9fa653fdb8fa58ef062205c8da808ce8e18c162d", size = 2327919, upload-time = "2024-05-14T04:14:42.155Z" },
     { url = "https://files.pythonhosted.org/packages/57/c8/5111d6a06c7e495be7bee684af9f5be522da687b6fc871ab4fcdd5865447/curl_cffi-0.6.4-cp38-abi3-win_amd64.whl", hash = "sha256:44614d527f24cb2467690256483c72da40906ac4ccb573e44d75a959774eefe5", size = 2314824, upload-time = "2024-05-14T04:14:44.375Z" },
+]
+
+[[package]]
+name = "deep-translator"
+version = "1.11.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7d/03/8fa7635c729a01de71151894cdf002ad6d245bfd6d1a731da864cf534dcf/deep_translator-1.11.4.tar.gz", hash = "sha256:801260c69231138707ea88a0955e484db7d40e210c9e0ae0f77372ffda5f4bf5", size = 36043, upload-time = "2023-06-28T19:55:23.499Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/38/3f/61a8ef73236dbea83a1a063a8af2f8e1e41a0df64f122233938391d0f175/deep_translator-1.11.4-py3-none-any.whl", hash = "sha256:d635df037e23fa35d12fd42dab72a0b55c9dd19e6292009ee7207e3f30b9e60a", size = 42285, upload-time = "2023-06-28T19:55:20.928Z" },
 ]
 
 [[package]]
@@ -1217,6 +1243,7 @@ dependencies = [
     { name = "colorama" },
     { name = "cryptography" },
     { name = "curl-cffi" },
+    { name = "deep-translator" },
     { name = "frozenlist" },
     { name = "greenlet" },
     { name = "h11" },
@@ -1289,6 +1316,7 @@ requires-dist = [
     { name = "colorama", specifier = "==0.4.6" },
     { name = "cryptography", specifier = "==46.0.3" },
     { name = "curl-cffi", specifier = "==0.6.4" },
+    { name = "deep-translator", specifier = ">=1.11.4" },
     { name = "frozenlist", specifier = "==1.8.0" },
     { name = "greenlet", specifier = "==3.3.0" },
     { name = "h11", specifier = "==0.16.0" },
@@ -1981,6 +2009,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/2f/39/714118f8413e0e353436914f2b976665161f1be2b6483ac15a8f61484c14/sounddevice-0.5.3-py3-none-macosx_10_6_x86_64.macosx_10_6_universal2.whl", hash = "sha256:278dc4451fff70934a176df048b77d80d7ce1623a6ec9db8b34b806f3112f9c2", size = 108306, upload-time = "2025-10-19T13:23:53.277Z" },
     { url = "https://files.pythonhosted.org/packages/f5/74/52186e3e5c833d00273f7949a9383adff93692c6e02406bf359cb4d3e921/sounddevice-0.5.3-py3-none-win32.whl", hash = "sha256:845d6927bcf14e84be5292a61ab3359cf8e6b9145819ec6f3ac2619ff089a69c", size = 312882, upload-time = "2025-10-19T13:23:54.829Z" },
     { url = "https://files.pythonhosted.org/packages/66/c7/16123d054aef6d445176c9122bfbe73c11087589b2413cab22aff5a7839a/sounddevice-0.5.3-py3-none-win_amd64.whl", hash = "sha256:f55ad20082efc2bdec06928e974fbcae07bc6c405409ae1334cefe7d377eb687", size = 364025, upload-time = "2025-10-19T13:23:56.362Z" },
+]
+
+[[package]]
+name = "soupsieve"
+version = "2.8.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/47/2c/0a5f6f8ee0d5589e48c7640213ed5175d52cf540a06725b628cc1a45d6ce/soupsieve-2.8.4.tar.gz", hash = "sha256:e121fd02e975c695e4e9e8774a5ee35d74714b59307868dcc5319ad2d9e3328e", size = 121110, upload-time = "2026-05-24T13:55:57.154Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/f5/0c41cb68dcae6b7de4fac4188a3a9589e21fb31df21ea3a2e888db95e6c9/soupsieve-2.8.4-py3-none-any.whl", hash = "sha256:e7e6b0769c8f51ed59acab6e994b00621096cfb1c640a7509295987388fbaf65", size = 37304, upload-time = "2026-05-24T13:55:55.406Z" },
 ]
 
 [[package]]

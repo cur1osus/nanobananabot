@@ -120,6 +120,8 @@ async def _run_image(
     aspect_ratio = str(params.get("aspect_ratio", "auto"))
     photos = [str(p) for p in params.get("photos", [])]
     is_create = task.kind == GenerationKind.IMAGE_CREATE.value
+    scenario_strength = params.get("strength")
+    scenario_steps = params.get("steps")
 
     positive_prompt = f"{model.prompt_prefix}{prompt}".strip()
 
@@ -147,9 +149,10 @@ async def _run_image(
             output_format="jpeg",
             negative_prompt=model.negative_prompt or None,
             img2img_mode=model.img2img_mode,
-            steps=model.steps,
+            steps=scenario_steps if scenario_steps is not None else model.steps,
             cfg_scale=model.cfg_scale,
             loras=list(model.loras) if model.loras else None,
+            strength=scenario_strength,
             on_civitai_submit=_persist_workflow_id,
         )
 

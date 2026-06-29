@@ -258,6 +258,7 @@ async def generate_image(
     steps: int | None = None,
     cfg_scale: float | None = None,
     loras: list[dict[str, str | float]] | None = None,
+    strength: float | None = None,
     on_civitai_submit: Callable[[str], Awaitable[None]] | None = None,
 ) -> bytes:
     """Generate image via the configured provider.
@@ -302,6 +303,7 @@ async def generate_image(
             cfg_scale=cfg_scale,
             loras=loras,
             reference_images=reference_images,
+            strength=strength,
             on_submit=on_civitai_submit,
         )
 

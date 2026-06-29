@@ -104,6 +104,8 @@ async def _run_image_generation(
     session: AsyncSession,
     redis: Redis,
     prompt: str,
+    strength: float | None = None,
+    scenario_steps: int | None = None,
 ) -> None:
     """Поставить генерацию-редактирование в очередь и сразу освободить чат.
 
@@ -150,6 +152,8 @@ async def _run_image_generation(
                 "prompt": normalized_prompt,
                 "aspect_ratio": data.aspect_ratio,
                 "photos": list(data.photos),
+                "strength": strength,
+                "steps": scenario_steps,
             },
         )
     except GenerationBusy:
@@ -505,6 +509,8 @@ async def handle_scenario_select(
                         session=session,
                         redis=redis,
                         prompt=sc.prompt,
+                        strength=sc.strength,
+                        scenario_steps=sc.steps,
                     )
                 return
         await query.answer("Неизвестный сценарий", show_alert=True)

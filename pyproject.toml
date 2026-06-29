@@ -58,6 +58,7 @@ dependencies = [
     "uvloop==0.22.1",
     "websockets==15.0.1",
     "yarl==1.22.0",
+    "deep-translator>=1.11.4",
 ]
 
 [project.optional-dependencies]
