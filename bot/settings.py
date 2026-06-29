@@ -153,6 +153,17 @@ class VseGptSettings(BaseSettings):
     timeout: int = 60
 
 
+class RouterAiSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="ROUTERAI_", extra="ignore")
+
+    # STT через RouterAI (whisper). Доступен с сервера только через WireGuard-relay
+    # (RU-IP за EU→RU фильтром). Если api_key пуст — STT остаётся на VseGpt.
+    api_key: str = ""
+    base_url: str = "https://routerai.ru/api/v1"
+    stt_model: str = "openai/whisper-large-v3-turbo"
+    timeout: int = 60
+
+
 class WithdrawSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="WITHDRAW_", extra="ignore")
 
@@ -221,6 +232,7 @@ class Settings(BaseSettings):
     suno: SunoSettings = Field(default_factory=SunoSettings)
     agent_platform: AgentPlatformSettings = Field(default_factory=AgentPlatformSettings)
     vsegpt: VseGptSettings = Field(default_factory=VseGptSettings)
+    routerai: RouterAiSettings = Field(default_factory=RouterAiSettings)
     withdraw: WithdrawSettings = Field(default_factory=WithdrawSettings)
     payments: PaymentsSettings = Field(default_factory=PaymentsSettings)
     topup: TopupSettings = Field(default_factory=TopupSettings)

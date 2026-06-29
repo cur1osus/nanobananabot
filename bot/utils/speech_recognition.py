@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import contextlib
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -13,9 +15,71 @@ from openai import AsyncOpenAI
 from bot.settings import se
 from bot.utils.http import get_http_session
 
+logger = logging.getLogger(__name__)
+
 
 class SpeechRecognitionError(Exception):
     """Errors raised by the speech recognition agent."""
+
+
+# Telegram voice — .oga (ogg/opus); whisper RouterAI принимает ogg напрямую,
+# поэтому конвертация не нужна. Прочие форматы мапим по расширению.
+_FORMAT_BY_SUFFIX = {
+    ".oga": "ogg",
+    ".ogg": "ogg",
+    ".opus": "ogg",
+    ".mp3": "mp3",
+    ".mpeg": "mp3",
+    ".mpga": "mp3",
+    ".m4a": "m4a",
+    ".wav": "wav",
+    ".webm": "webm",
+}
+
+
+def _audio_format_from_path(file_path: str) -> str:
+    return _FORMAT_BY_SUFFIX.get(Path(file_path).suffix.lower(), "ogg")
+
+
+async def _transcribe_routerai(
+    audio_bytes: bytes,
+    audio_format: str,
+    *,
+    language: str | None = None,
+) -> str:
+    """STT через RouterAI whisper. RouterAI требует JSON-тело (НЕ multipart):
+    {"model","input_audio":{"data":<b64>,"format"},"language"?} и возвращает
+    {"text","usage"}. Доступен с сервера только через WireGuard-relay."""
+    payload: dict[str, Any] = {
+        "model": se.routerai.stt_model,
+        "input_audio": {
+            "data": base64.b64encode(audio_bytes).decode("ascii"),
+            "format": audio_format,
+        },
+    }
+    if language:
+        payload["language"] = language
+
+    url = f"{se.routerai.base_url.rstrip('/')}/audio/transcriptions"
+    headers = {
+        "Authorization": f"Bearer {se.routerai.api_key}",
+        "Content-Type": "application/json",
+    }
+    timeout = aiohttp.ClientTimeout(total=se.routerai.timeout)
+    session = get_http_session()
+    async with session.post(url, json=payload, headers=headers, timeout=timeout) as resp:
+        data = await resp.json(content_type=None)
+        if resp.status >= 400:
+            message = (data or {}).get("error", {})
+            if isinstance(message, dict):
+                message = message.get("message")
+            raise SpeechRecognitionError(
+                f"RouterAI STT error {resp.status}: {message or data}"
+            )
+    text = _extract_text(data)
+    if not text:
+        raise SpeechRecognitionError("Empty RouterAI transcription response.")
+    return text
 
 
 class SpeechRecognitionAgent:
@@ -142,6 +206,20 @@ async def transcribe_message_audio(
         raise SpeechRecognitionError("Bot token is not available for download.")
 
     audio_bytes = await _download_telegram_file(bot_token, file_path)
+
+    # Основной путь — RouterAI whisper (если задан ключ); при любой ошибке
+    # откатываемся на VseGpt, чтобы голосовой ввод не падал.
+    if se.routerai.api_key:
+        try:
+            audio_format = _audio_format_from_path(file_path)
+            return await _transcribe_routerai(
+                audio_bytes, audio_format, language=language
+            )
+        except Exception:
+            logger.warning(
+                "RouterAI STT не удался, фолбэк на VseGpt", exc_info=True
+            )
+
     suffix = Path(file_path).suffix or ".ogg"
     temp_path = _write_temp_audio_file(audio_bytes, suffix)
     try:
