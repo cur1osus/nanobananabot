@@ -413,6 +413,13 @@ def _load_topup_tariffs() -> dict[str, list[TopupTariff]]:
 
 _TOPUP_TARIFFS = _load_topup_tariffs()
 
+# Скрытый тестовый тариф для команды /testp (только админ). Намеренно НЕ входит в
+# _TOPUP_TARIFFS, поэтому не попадает в публичное меню пополнения, но резолвится
+# в get_topup_tariff — значит pre_checkout и successful_payment проверяют сумму и
+# начисляют кредиты тем же путём, что и обычный платёж картой.
+TEST_TOPUP_PLAN = "test"
+_TEST_TOPUP_TARIFF = TopupTariff(plan=TEST_TOPUP_PLAN, price=80, credits=30, songs=30)
+
 
 def get_topup_method(method: str) -> TopupMethodInfo | None:
     return _TOPUP_METHODS.get(method)
@@ -423,6 +430,8 @@ def get_topup_tariffs(method: str) -> list[TopupTariff]:
 
 
 def get_topup_tariff(method: str, plan: str) -> TopupTariff | None:
+    if method == "card" and plan == TEST_TOPUP_PLAN:
+        return _TEST_TOPUP_TARIFF
     for tariff in _TOPUP_TARIFFS.get(method, []):
         if tariff.plan == plan:
             return tariff
