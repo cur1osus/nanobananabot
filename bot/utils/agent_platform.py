@@ -26,8 +26,10 @@ TRANSLATE_SYSTEM_PROMPT = (
 # идею/черновик пользователя в сильный промпт. Вывод — ТОЛЬКО промпт, без пояснений.
 _PROMPT_ENGINEER_BASE = (
     "You are an expert prompt engineer for AI image models. "
-    "Output ONLY the final prompt in English — no quotes, no labels, no notes, "
-    "no options, no explanations. One paragraph."
+    "Reply in EXACTLY this format and nothing else:\n"
+    "PROMPT: <the final image prompt in English, one paragraph>\n"
+    "ОПИСАНИЕ: <one short sentence in RUSSIAN describing what will be generated>\n"
+    "No quotes, no extra lines, no explanations."
 )
 _PROMPT_CREATE_HINT = (
     "Task: write ONE powerful text-to-image prompt. Include main subject, setting, "
@@ -52,6 +54,25 @@ def build_image_prompt_system(*, mode: str, target: str) -> str:
     target_hint = _PROMPT_EDIT_HINT if target == "edit" else _PROMPT_CREATE_HINT
     mode_hint = _PROMPT_SCRATCH_HINT if mode == "scratch" else _PROMPT_ENRICH_HINT
     return f"{_PROMPT_ENGINEER_BASE}\n{target_hint}\n{mode_hint}"
+
+
+def parse_prompt_and_summary(raw: str) -> tuple[str, str]:
+    """Разобрать ответ LLM формата ``PROMPT:`` / ``ОПИСАНИЕ:`` на (англ. промпт,
+    рус. описание). Если формат не распознан — весь текст считаем промптом."""
+    prompt, summary = "", ""
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if ":" not in stripped:
+            continue
+        key, _, value = stripped.partition(":")
+        key_low = key.strip().lower()
+        if key_low == "prompt":
+            prompt = value.strip()
+        elif key_low in ("описание", "summary"):
+            summary = value.strip()
+    if not prompt:
+        prompt = raw.strip()
+    return prompt, summary
 
 
 class AgentPlatformAPIError(Exception):
@@ -166,15 +187,15 @@ class AgentPlatformClient:
         mode: str,
         target: str,
         model: str | None = None,
-    ) -> str:
-        """Сгенерировать/обогатить промпт для генерации или редактирования фото.
+    ) -> tuple[str, str]:
+        """Сгенерировать/обогатить промпт. Возвращает (англ. промпт, рус. описание).
 
         mode: ``enrich`` (обогатить черновик) | ``scratch`` (создать по теме).
         target: ``create`` (text2img) | ``edit`` (image-to-image)."""
         if not text or not text.strip():
             raise AgentPlatformAPIError("Пустой ввод для генерации промпта.")
 
-        return await self._chat(
+        raw = await self._chat(
             messages=[
                 {
                     "role": "system",
@@ -185,6 +206,7 @@ class AgentPlatformClient:
             model=model or self.translate_model,
             temperature=0.9,
         )
+        return parse_prompt_and_summary(raw)
 
 
 def build_agent_platform_client() -> AgentPlatformClient:

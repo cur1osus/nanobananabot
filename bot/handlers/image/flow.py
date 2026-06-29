@@ -61,11 +61,11 @@ from bot.utils.texts import (
     ADULT_PROMPT_REQUEST_TEXT,
     AI_PROMPT_ENRICH_ASK,
     AI_PROMPT_MODE_TEXT,
-    AI_PROMPT_RESULT_TEXT,
     AI_PROMPT_SCRATCH_ASK,
     CREATE_ASPECT_RATIO_TEXT,
     CREATE_PROMPT_TEXT,
     PROMPT_REQUEST_TEXT,
+    ai_prompt_result_text,
     generation_started_text,
     model_panel_text,
 )
@@ -816,19 +816,22 @@ async def collect_create_prompt_voice(
 # bot/utils/agent_platform.py::generate_image_prompt.
 
 
-async def _produce_ai_prompt(state: FSMContext) -> tuple[dict, str]:
-    """Сгенерировать промпт по сохранённым в state параметрам и вернуть (ap, prompt)."""
+async def _produce_ai_prompt(state: FSMContext) -> tuple[dict, str, str]:
+    """Сгенерировать промпт по сохранённым в state параметрам.
+
+    Возвращает (ap, англ. промпт, рус. описание)."""
     data = await state.get_data()
     ap = dict(data.get(AI_PROMPT_STATE_KEY) or {})
     client = build_agent_platform_client()
-    prompt = await client.generate_image_prompt(
+    prompt, summary = await client.generate_image_prompt(
         text=str(ap.get("input", "")),
         mode=str(ap.get("mode", "enrich")),
         target=str(ap.get("target", "create")),
     )
     ap["generated"] = prompt
+    ap["summary"] = summary
     await state.update_data({AI_PROMPT_STATE_KEY: ap})
-    return ap, prompt
+    return ap, prompt, summary
 
 
 @router.callback_query(AiPrompt.filter(F.action == "open"))
@@ -869,13 +872,13 @@ async def _ai_prompt_from_input(message: Message, state: FSMContext, raw: str) -
     await state.update_data({AI_PROMPT_STATE_KEY: ap})
     wait = await message.answer("✨ Генерирую промпт…")
     try:
-        ap2, prompt = await _produce_ai_prompt(state)
+        ap2, prompt, summary = await _produce_ai_prompt(state)
     except Exception:
         logger.exception("Не удалось сгенерировать ИИ-промпт")
         await wait.edit_text("❌ Не удалось сгенерировать промпт. Попробуйте ещё раз.")
         return
     await wait.edit_text(
-        AI_PROMPT_RESULT_TEXT.format(prompt=prompt),
+        ai_prompt_result_text(prompt, summary),
         reply_markup=await ik_ai_prompt_result(str(ap2.get("target", "create"))),
     )
 
@@ -909,14 +912,14 @@ async def ai_prompt_regen(query: CallbackQuery, state: FSMContext) -> None:
         return
     await query.answer("Генерирую другой вариант…")
     try:
-        ap2, prompt = await _produce_ai_prompt(state)
+        ap2, prompt, summary = await _produce_ai_prompt(state)
     except Exception:
         logger.exception("Не удалось перегенерировать ИИ-промпт")
         await query.answer("Ошибка генерации, попробуйте ещё раз", show_alert=True)
         return
     await edit_or_answer(
         query,
-        text=AI_PROMPT_RESULT_TEXT.format(prompt=prompt),
+        text=ai_prompt_result_text(prompt, summary),
         reply_markup=await ik_ai_prompt_result(str(ap2.get("target", "create"))),
     )
 
