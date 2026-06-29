@@ -29,7 +29,7 @@ async def _translate_via_deep_translator(prompt: str) -> str | None:
 
 
 async def _translate_prompt(prompt: str) -> str:
-    """Перевести промпт на английский через LLM (DeepSeek V4 Flash и т.п.).
+    """Перевести промпт на английский через LLM (Gemini 3 Flash и т.п.).
 
     Промпт без кириллицы считается уже англоязычным и не переводится. Основной
     путь — LLM из agent_platform; при ошибке/таймауте/отказе откатываемся на
