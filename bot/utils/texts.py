@@ -14,7 +14,14 @@ from bot.utils.image_models import (
 )
 
 MAIN_MENU_TEXT = (
-    "🏠 Главное меню\n💰 Ваш баланс: {credits} кредитов\n🖼 Что вы хотите сделать?"
+    "👋 Привет! Это Bum Ai Bot — доступ к топовым нейросетям "
+    "для создания фото, видео и музыки.\n\n"
+    "🖌 Редактирование фото — Nano Banana, FLUX, GPT Image\n"
+    "✨ Генерация изображений по текстовому описанию\n"
+    "🎬 Видео — Kling\n"
+    "🎼 Песни и музыка — Suno\n\n"
+    "Выберите раздел на кнопках ниже 👇\n\n"
+    "💰 Ваш баланс: {credits} кредитов"
 )
 
 BOT_INFO_TEXT = "Bum Ai Bot 🤖 — изображения, видео и музыка.\n\nПоддержка: @Webskill"
@@ -456,6 +463,21 @@ def main_menu_text(user: UserRD) -> str:
     return MAIN_MENU_TEXT.format(credits=user.credits)
 
 
+def profile_text(user: UserRD) -> str:
+    lines = [
+        "👤 Мой профиль",
+        "",
+        f"🆔 ID: <code>{user.user_id}</code>",
+        f"💰 Баланс: {user.credits} кредитов",
+    ]
+    if user.gift_credits > 0:
+        lines.append(f"🎁 Подарочных кредитов: {user.gift_credits}")
+    lines.append(f"💸 Реферальный баланс: {format_rub(user.balance)} руб.")
+    lines.append("")
+    lines.append("Выберите раздел ниже 👇")
+    return "\n".join(lines)
+
+
 def how_text(bot_name: str) -> str:
     return (
         f"🖼 Как работает бот {bot_name}\n\n"
@@ -468,7 +490,7 @@ def how_text(bot_name: str) -> str:
         "5️⃣ В разделе «Создать музыку» можно сделать текст песни через ИИ, "
         "отправить готовый текст или создать инструментал.\n\n"
         "💳 Если генерации закончатся, ты всегда можешь пополнить баланс в "
-        "главном меню."
+        "разделе «Мой профиль»."
     )
 
 

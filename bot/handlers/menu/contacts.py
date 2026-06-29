@@ -15,7 +15,7 @@ async def ik_contacts_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
         text="🔙 Назад",
-        callback_data=MenuAction(action="home").pack(),
+        callback_data=MenuAction(action="profile").pack(),
     )
     builder.adjust(1)
     return builder.as_markup()

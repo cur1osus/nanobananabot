@@ -7,12 +7,17 @@ from aiogram.types import CallbackQuery
 from bot.db.enum import UserRole
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import MenuAction
-from bot.keyboards.inline import ik_main, ik_model_select_for_key, ik_video_settings
+from bot.keyboards.inline import (
+    ik_main,
+    ik_model_select_for_key,
+    ik_profile_menu,
+    ik_video_settings,
+)
 from bot.states import BaseUserState, ImageGenerationState, VideoGenerationState
 from bot.utils.image_models import DEFAULT_IMAGE_MODEL_KEY, is_adult_model_key
 from bot.utils.image_state import get_image_data, update_image_data
 from bot.utils.messaging import edit_or_answer
-from bot.utils.texts import main_menu_text, model_panel_text
+from bot.utils.texts import main_menu_text, model_panel_text, profile_text
 from bot.utils.video_state import get_video_data, video_settings_text
 
 router = Router()
@@ -30,6 +35,21 @@ async def menu_home(
         query,
         text=main_menu_text(user),
         reply_markup=await ik_main(is_admin=user.role == UserRole.ADMIN.value),
+    )
+
+
+@router.callback_query(MenuAction.filter(F.action == "profile"))
+async def menu_profile(
+    query: CallbackQuery,
+    state: FSMContext,
+    user: UserRD,
+) -> None:
+    await query.answer()
+    await state.set_state(BaseUserState.main)
+    await edit_or_answer(
+        query,
+        text=profile_text(user),
+        reply_markup=await ik_profile_menu(),
     )
 
 

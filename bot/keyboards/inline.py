@@ -195,25 +195,6 @@ async def ik_image_result_actions() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-async def ik_demo_result_cta() -> InlineKeyboardMarkup:
-    """CTA после демо-генерации: подтолкнуть к работе со своим фото."""
-    builder = InlineKeyboardBuilder()
-    builder.button(
-        text="🖌 Обработать своё фото",
-        callback_data=MenuAction(action="edit").pack(),
-    )
-    builder.button(
-        text="✨ Сгенерировать по тексту",
-        callback_data=MenuAction(action="image").pack(),
-    )
-    builder.button(
-        text=BACK_BUTTON_TEXT,
-        callback_data=MenuAction(action="home").pack(),
-    )
-    builder.adjust(1)
-    return builder.as_markup()
-
-
 async def ik_prompt_nav(is_adult: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if is_adult:
@@ -301,12 +282,6 @@ async def ik_create_aspect_ratio(is_adult: bool = False) -> InlineKeyboardMarkup
 
 async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    # Демо-фото пока тестируем только на админах.
-    if is_admin:
-        builder.button(
-            text="🎁 Попробовать на демо-фото",
-            callback_data=MenuAction(action="demo_try").pack(),
-        )
     builder.button(
         text="🖌 Редактирование фото",
         callback_data=MenuAction(action="edit").pack(),
@@ -330,24 +305,8 @@ async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:
         callback_data=MenuAction(action="music").pack(),
     )
     builder.button(
-        text="🎧 Мои треки",
-        callback_data=MenuAction(action="tracks").pack(),
-    )
-    builder.button(
-        text="ℹ️ Как это работает?",
-        callback_data=MenuAction(action="how").pack(),
-    )
-    builder.button(
-        text="💳 Пополнить баланс",
-        callback_data=MenuAction(action="topup").pack(),
-    )
-    builder.button(
-        text="🪙 Заработать",
-        callback_data=MenuAction(action="earn").pack(),
-    )
-    builder.button(
-        text="📞 Контакты",
-        callback_data=MenuAction(action="contacts").pack(),
+        text="👤 Мой профиль",
+        callback_data=MenuAction(action="profile").pack(),
     )
     if is_admin:
         builder.button(
@@ -358,23 +317,45 @@ async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-async def ik_how_menu() -> InlineKeyboardMarkup:
+async def ik_profile_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="✨ Генерация изображения",
-        callback_data=MenuAction(action="image").pack(),
+        text="💳 Пополнить баланс",
+        callback_data=MenuAction(action="topup").pack(),
     )
     builder.button(
-        text="🎼 Создать музыку",
-        callback_data=MenuAction(action="music").pack(),
+        text="🎧 Мои треки",
+        callback_data=MenuAction(action="tracks").pack(),
     )
+    builder.button(
+        text="ℹ️ Как это работает?",
+        callback_data=MenuAction(action="how").pack(),
+    )
+    builder.button(
+        text="🪙 Заработать",
+        callback_data=MenuAction(action="earn").pack(),
+    )
+    builder.button(
+        text="📞 Контакты",
+        callback_data=MenuAction(action="contacts").pack(),
+    )
+    builder.button(
+        text=BACK_BUTTON_TEXT,
+        callback_data=MenuAction(action="home").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_how_menu() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
     builder.button(
         text="💳 Пополнить баланс",
         callback_data=MenuAction(action="topup").pack(),
     )
     builder.button(
         text=BACK_BUTTON_TEXT,
-        callback_data=MenuAction(action="home").pack(),
+        callback_data=MenuAction(action="profile").pack(),
     )
     builder.adjust(1)
     return builder.as_markup()
@@ -431,7 +412,7 @@ async def ik_earn_menu(share_url: str) -> InlineKeyboardMarkup:
     )
     builder.button(
         text=BACK_BUTTON_TEXT,
-        callback_data=MenuAction(action="home").pack(),
+        callback_data=MenuAction(action="profile").pack(),
     )
     builder.adjust(1)
     return builder.as_markup()

@@ -71,7 +71,7 @@ async def ik_my_tracks_list(
         [
             InlineKeyboardButton(
                 text=BACK_BUTTON_TEXT,
-                callback_data=MenuAction(action="home").pack(),
+                callback_data=MenuAction(action="profile").pack(),
             )
         ]
     )
