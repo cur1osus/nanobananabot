@@ -107,14 +107,14 @@ OTHER_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
     ),
 )
 
-# +18 (NSFW) модели через Runware (open-weights SDXL/Pony чекпойнты с CivitAI).
-# Доступ к разделу закрыт age-gate. У этих моделей нет встроенной модерации, в отличие
-# от проприетарных FLUX.2 Max/Pro (те всегда возвращали "Request Moderated").
-# AIR-идентификаторы проверены через Runware Model Search и доступны нашему ключу.
-
-# Раздел 18+: единственная модель FLUX.2 Klein 9B через Prodia (open-weights, без
-# модерации). Максимально базовая конфигурация — без префиксов/negative и без
-# переопределения steps/guidance (используются дефолты Prodia).
+# Раздел 18+ (NSFW): доступ закрыт age-gate (подтверждение возраста). У этих
+# open-weights моделей нет встроенной модерации, в отличие от проприетарных
+# FLUX.2 Max/Pro (те возвращали "Request Moderated").
+#
+# Меню 18+ всегда заходит в DEFAULT_ADULT_IMAGE_MODEL_KEY = "adult_flux_realistic":
+# FLUX.2 9B + LoRA Ultra Real V4 через CivitAI workflow, 3 кредита. Русские промпты
+# переводятся на английский в civitai_api перед отправкой.
+# Вторая модель ("adult_flux_klein", Prodia, 1 кредит) пока в меню не используется.
 ADULT_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
     ImageModelOption(
         key="adult_flux_realistic",
