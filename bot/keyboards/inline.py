@@ -373,7 +373,7 @@ async def ik_topup_methods() -> InlineKeyboardMarkup:
     )
     builder.button(
         text="↩️ Назад",
-        callback_data=MenuAction(action="home").pack(),
+        callback_data=MenuAction(action="profile").pack(),
     )
     builder.adjust(2, 1)
     return builder.as_markup()
