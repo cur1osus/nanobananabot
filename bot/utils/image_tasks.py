@@ -168,17 +168,21 @@ class ImageModerationError(ImageGenerationError):
     и сделать фолбэк на open-weights модель без модерации (Prodia)."""
 
 
-# Маркеры в тексте ошибки провайдера, указывающие на отказ по модерации, а не
-# на технический сбой. Проверяются без учёта регистра.
+# Признаки отказа по модерации в ошибке Runware (а не технического сбоя вроде
+# unsupportedParameter/invalidPositivePrompt). Главный — структурный код
+# Runware `invalidProviderContent`; остальные фразы подстраховывают на случай
+# других провайдеров. Узкий набор намеренно: общие слова ("not allowed",
+# "prohibited") ловили бы технические ошибки и давали ложный фолбэк.
+# Реальный ответ Google/Vertex: "...flagged and rejected by Google's content
+# moderation system... violated Vertex AI's usage guidelines...".
 _MODERATION_MARKERS: tuple[str, ...] = (
-    "moderat",  # "Request Moderated", "content moderated"
+    "invalidprovidercontent",
+    "content moderation",
+    "moderation system",
+    "flagged and rejected",
+    "usage guidelines",
+    "content was flagged",
     "nsfw",
-    "inappropriate",
-    "content policy",
-    "safety",
-    "flagged",
-    "prohibited",
-    "not allowed",
 )
 
 
