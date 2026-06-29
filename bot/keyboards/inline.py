@@ -290,12 +290,10 @@ async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:
         text="✨ Генерация изображения",
         callback_data=MenuAction(action="image").pack(),
     )
-    # Раздел 18+ временно доступен только админам (тестовый период).
-    if is_admin:
-        builder.button(
-            text="🔞 18+ генерация",
-            callback_data=MenuAction(action="adult").pack(),
-        )
+    builder.button(
+        text="🔞 18+ генерация",
+        callback_data=MenuAction(action="adult").pack(),
+    )
     builder.button(
         text="🎬 Создать видео",
         callback_data=MenuAction(action="video").pack(),

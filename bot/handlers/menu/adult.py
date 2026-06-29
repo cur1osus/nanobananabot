@@ -5,7 +5,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 from redis.asyncio import Redis
 
-from bot.db.enum import UserRole
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import MenuAction
 from bot.keyboards.inline import (
@@ -30,20 +29,12 @@ router = Router()
 _ADULT_CONFIRM_KEY = "adult_ok:{user_id}"
 
 
-def _is_adult_allowed(user: UserRD) -> bool:
-    # Тестовый период: раздел 18+ открыт только админам.
-    return user.role == UserRole.ADMIN.value
-
-
 async def _is_adult_confirmed(redis: Redis, user_id: int) -> bool:
     return bool(await redis.get(_ADULT_CONFIRM_KEY.format(user_id=user_id)))
 
 
 async def _guard(query: CallbackQuery, user: UserRD, redis: Redis) -> bool:
-    """Проверка доступа + подтверждения возраста. True — можно продолжать."""
-    if not _is_adult_allowed(user):
-        await query.answer("Раздел временно недоступен", show_alert=True)
-        return False
+    """Проверка подтверждения возраста. True — можно продолжать."""
     if not await _is_adult_confirmed(redis, user.user_id):
         await query.answer()
         await edit_or_answer(
@@ -81,9 +72,6 @@ async def menu_adult_confirm(
     user: UserRD,
     redis: Redis,
 ) -> None:
-    if not _is_adult_allowed(user):
-        await query.answer("Раздел временно недоступен", show_alert=True)
-        return
     await redis.set(_ADULT_CONFIRM_KEY.format(user_id=user.user_id), "1")
     await query.answer("Доступ подтверждён")
     await _show_adult_menu(query)
