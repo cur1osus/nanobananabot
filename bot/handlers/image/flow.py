@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.db.enum import GenerationKind
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import (
+    AiPrompt,
     CreateAspectRatio,
     ImageNav,
     ImageResultAction,
@@ -22,6 +23,9 @@ from bot.keyboards.factories import (
     SelectScenario,
 )
 from bot.keyboards.inline import (
+    ik_ai_prompt_input_back,
+    ik_ai_prompt_modes,
+    ik_ai_prompt_result,
     ik_back_home,
     ik_create_aspect_ratio,
     ik_create_prompt_nav,
@@ -51,15 +55,22 @@ from bot.utils.speech_recognition import (
     SpeechRecognitionError,
     transcribe_message_audio,
 )
+from bot.utils.agent_platform import build_agent_platform_client
 from bot.utils.texts import (
     ADULT_CREATE_PROMPT_TEXT,
     ADULT_PROMPT_REQUEST_TEXT,
+    AI_PROMPT_ENRICH_ASK,
+    AI_PROMPT_MODE_TEXT,
+    AI_PROMPT_RESULT_TEXT,
+    AI_PROMPT_SCRATCH_ASK,
     CREATE_ASPECT_RATIO_TEXT,
     CREATE_PROMPT_TEXT,
     PROMPT_REQUEST_TEXT,
     generation_started_text,
     model_panel_text,
 )
+
+AI_PROMPT_STATE_KEY = "ai_prompt"
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -683,13 +694,10 @@ async def select_create_aspect_ratio(
     )
     await state.set_state(ImageGenerationState.waiting_create_prompt)
     await query.answer()
-    prompt_text = (
-        ADULT_CREATE_PROMPT_TEXT
-        if is_adult_model_key(data.model_key)
-        else CREATE_PROMPT_TEXT
-    )
+    is_adult = is_adult_model_key(data.model_key)
+    prompt_text = ADULT_CREATE_PROMPT_TEXT if is_adult else CREATE_PROMPT_TEXT
     await edit_or_answer(
-        query, text=prompt_text, reply_markup=await ik_create_prompt_nav()
+        query, text=prompt_text, reply_markup=await ik_create_prompt_nav(is_adult)
     )
 
 
@@ -699,10 +707,11 @@ async def select_create_aspect_ratio(
     F.document,
     F.document.mime_type.startswith("image/"),
 )
-async def remind_create_prompt_photo(message: Message) -> None:
+async def remind_create_prompt_photo(message: Message, state: FSMContext) -> None:
+    data = await get_image_data(state)
     await message.answer(
         "В режиме создания фото не нужны. Пришлите только текстовый промпт.",
-        reply_markup=await ik_create_prompt_nav(),
+        reply_markup=await ik_create_prompt_nav(is_adult_model_key(data.model_key)),
     )
 
 
@@ -798,4 +807,176 @@ async def collect_create_prompt_voice(
     except Exception:
         await processing_msg.edit_text(
             "❌ Произошла ошибка при обработке голосового сообщения. Попробуйте ввести текстом."
+        )
+
+
+# ─── «✨ Промпт с помощью ИИ» ──────────────────────────────────────────────────
+# Кнопка на экране ввода промпта (для генерации и редактирования, кроме 18+):
+# дешёвая LLM обогащает черновик или придумывает промпт по теме. См.
+# bot/utils/agent_platform.py::generate_image_prompt.
+
+
+async def _produce_ai_prompt(state: FSMContext) -> tuple[dict, str]:
+    """Сгенерировать промпт по сохранённым в state параметрам и вернуть (ap, prompt)."""
+    data = await state.get_data()
+    ap = dict(data.get(AI_PROMPT_STATE_KEY) or {})
+    client = build_agent_platform_client()
+    prompt = await client.generate_image_prompt(
+        text=str(ap.get("input", "")),
+        mode=str(ap.get("mode", "enrich")),
+        target=str(ap.get("target", "create")),
+    )
+    ap["generated"] = prompt
+    await state.update_data({AI_PROMPT_STATE_KEY: ap})
+    return ap, prompt
+
+
+@router.callback_query(AiPrompt.filter(F.action == "open"))
+async def ai_prompt_open(
+    query: CallbackQuery,
+    callback_data: AiPrompt,
+    state: FSMContext,
+) -> None:
+    target = callback_data.target or "create"
+    await state.update_data({AI_PROMPT_STATE_KEY: {"target": target}})
+    await query.answer()
+    await edit_or_answer(
+        query, text=AI_PROMPT_MODE_TEXT, reply_markup=await ik_ai_prompt_modes(target)
+    )
+
+
+@router.callback_query(AiPrompt.filter(F.action.in_({"enrich", "scratch"})))
+async def ai_prompt_choose_mode(
+    query: CallbackQuery,
+    callback_data: AiPrompt,
+    state: FSMContext,
+) -> None:
+    target = callback_data.target or "create"
+    mode = callback_data.action
+    await state.update_data({AI_PROMPT_STATE_KEY: {"target": target, "mode": mode}})
+    await state.set_state(ImageGenerationState.waiting_ai_prompt_input)
+    await query.answer()
+    text = AI_PROMPT_ENRICH_ASK if mode == "enrich" else AI_PROMPT_SCRATCH_ASK
+    await edit_or_answer(
+        query, text=text, reply_markup=await ik_ai_prompt_input_back(target)
+    )
+
+
+async def _ai_prompt_from_input(message: Message, state: FSMContext, raw: str) -> None:
+    data = await state.get_data()
+    ap = dict(data.get(AI_PROMPT_STATE_KEY) or {})
+    ap["input"] = raw
+    await state.update_data({AI_PROMPT_STATE_KEY: ap})
+    wait = await message.answer("✨ Генерирую промпт…")
+    try:
+        ap2, prompt = await _produce_ai_prompt(state)
+    except Exception:
+        logger.exception("Не удалось сгенерировать ИИ-промпт")
+        await wait.edit_text("❌ Не удалось сгенерировать промпт. Попробуйте ещё раз.")
+        return
+    await wait.edit_text(
+        AI_PROMPT_RESULT_TEXT.format(prompt=prompt),
+        reply_markup=await ik_ai_prompt_result(str(ap2.get("target", "create"))),
+    )
+
+
+@router.message(ImageGenerationState.waiting_ai_prompt_input, F.text)
+async def ai_prompt_input_text(message: Message, state: FSMContext) -> None:
+    await _ai_prompt_from_input(message, state, message.text or "")
+
+
+@router.message(ImageGenerationState.waiting_ai_prompt_input, F.voice | F.audio)
+async def ai_prompt_input_voice(message: Message, state: FSMContext) -> None:
+    processing = await message.answer("🎙️ Распознаю голосовое сообщение...")
+    try:
+        text = await transcribe_message_audio(message, language="ru")
+    except Exception:
+        await processing.edit_text("❌ Не удалось распознать. Введите текстом.")
+        return
+    if not text:
+        await processing.edit_text("Не удалось распознать. Введите текстом.")
+        return
+    await processing.delete()
+    await _ai_prompt_from_input(message, state, text)
+
+
+@router.callback_query(AiPrompt.filter(F.action == "regen"))
+async def ai_prompt_regen(query: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    ap = dict(data.get(AI_PROMPT_STATE_KEY) or {})
+    if not ap.get("input"):
+        await query.answer("Сначала задайте тему или черновик", show_alert=True)
+        return
+    await query.answer("Генерирую другой вариант…")
+    try:
+        ap2, prompt = await _produce_ai_prompt(state)
+    except Exception:
+        logger.exception("Не удалось перегенерировать ИИ-промпт")
+        await query.answer("Ошибка генерации, попробуйте ещё раз", show_alert=True)
+        return
+    await edit_or_answer(
+        query,
+        text=AI_PROMPT_RESULT_TEXT.format(prompt=prompt),
+        reply_markup=await ik_ai_prompt_result(str(ap2.get("target", "create"))),
+    )
+
+
+@router.callback_query(AiPrompt.filter(F.action == "accept"))
+async def ai_prompt_accept(
+    query: CallbackQuery,
+    callback_data: AiPrompt,
+    state: FSMContext,
+    user: UserRD,
+    session: AsyncSession,
+    redis: Redis,
+) -> None:
+    data = await state.get_data()
+    ap = dict(data.get(AI_PROMPT_STATE_KEY) or {})
+    prompt = str(ap.get("generated", "")).strip()
+    target = str(ap.get("target") or callback_data.target or "create")
+    if not prompt:
+        await query.answer("Промпт ещё не готов", show_alert=True)
+        return
+    await query.answer()
+    if target == "create":
+        await state.set_state(ImageGenerationState.waiting_create_prompt)
+        await _run_create_generation(
+            message=query.message,
+            state=state,
+            user=user,
+            session=session,
+            redis=redis,
+            prompt=prompt,
+        )
+    else:
+        await state.set_state(ImageGenerationState.waiting_prompt)
+        await _run_image_generation(
+            message=query.message,
+            state=state,
+            user=user,
+            session=session,
+            redis=redis,
+            prompt=prompt,
+        )
+
+
+@router.callback_query(AiPrompt.filter(F.action == "back"))
+async def ai_prompt_back(
+    query: CallbackQuery,
+    callback_data: AiPrompt,
+    state: FSMContext,
+) -> None:
+    target = callback_data.target or "create"
+    await query.answer()
+    if target == "create":
+        await state.set_state(ImageGenerationState.waiting_create_prompt)
+        await edit_or_answer(
+            query,
+            text=CREATE_PROMPT_TEXT,
+            reply_markup=await ik_create_prompt_nav(False),
+        )
+    else:
+        await state.set_state(ImageGenerationState.waiting_prompt)
+        await edit_or_answer(
+            query, text=PROMPT_REQUEST_TEXT, reply_markup=await ik_prompt_nav(False)
         )

@@ -4,6 +4,7 @@ from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.keyboards.factories import (
+    AiPrompt,
     CreateAspectRatio,
     ImageNav,
     ImageResultAction,
@@ -202,9 +203,61 @@ async def ik_prompt_nav(is_adult: bool = False) -> InlineKeyboardMarkup:
             text="📋 Сценарии",
             callback_data=SelectScenario(action="select", key="").pack(),
         )
+    else:
+        # 18+ исключаем: LLM откажется обогащать такой промпт (защита).
+        builder.button(
+            text="✨ Промпт с помощью ИИ",
+            callback_data=AiPrompt(action="open", target="edit").pack(),
+        )
     builder.button(
         text="↩️ Назад",
         callback_data=ImageNav(action="to_photos").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_ai_prompt_modes(target: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="✍️ Обогатить мой промпт",
+        callback_data=AiPrompt(action="enrich", target=target).pack(),
+    )
+    builder.button(
+        text="🎲 Создать по теме",
+        callback_data=AiPrompt(action="scratch", target=target).pack(),
+    )
+    builder.button(
+        text="↩️ Назад",
+        callback_data=AiPrompt(action="back", target=target).pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_ai_prompt_input_back(target: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="↩️ Назад",
+        callback_data=AiPrompt(action="open", target=target).pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_ai_prompt_result(target: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="✅ Сгенерировать",
+        callback_data=AiPrompt(action="accept", target=target).pack(),
+    )
+    builder.button(
+        text="🎲 Другой вариант",
+        callback_data=AiPrompt(action="regen", target=target).pack(),
+    )
+    builder.button(
+        text="✍️ Ввести вручную",
+        callback_data=AiPrompt(action="back", target=target).pack(),
     )
     builder.adjust(1)
     return builder.as_markup()
@@ -227,8 +280,14 @@ async def ik_scenario_select() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-async def ik_create_prompt_nav() -> InlineKeyboardMarkup:
+async def ik_create_prompt_nav(is_adult: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    if not is_adult:
+        # 18+ исключаем: LLM откажется генерировать такой промпт (защита).
+        builder.button(
+            text="✨ Промпт с помощью ИИ",
+            callback_data=AiPrompt(action="open", target="create").pack(),
+        )
     builder.button(
         text="🔙 К выбору формата",
         callback_data=ImageNav(action="to_create_aspect").pack(),

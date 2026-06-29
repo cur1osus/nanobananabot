@@ -88,3 +88,10 @@ class VideoNav(CallbackData, prefix="video_nav"):
 class SelectScenario(CallbackData, prefix="scenario"):
     action: str  # "select" | "cancel"
     key: str = ""
+
+
+class AiPrompt(CallbackData, prefix="ai_prompt"):
+    # open — подменю выбора режима; enrich/scratch — выбор режима;
+    # regen — другой вариант; accept — запустить генерацию; back — к вводу промпта.
+    action: str
+    target: str = ""  # "create" | "edit"

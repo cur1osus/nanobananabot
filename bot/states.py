@@ -11,6 +11,7 @@ class ImageGenerationState(StatesGroup):
     waiting_create_model = State()
     waiting_create_aspect = State()
     waiting_create_prompt = State()
+    waiting_ai_prompt_input = State()
     processing = State()
 
 

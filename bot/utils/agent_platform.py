@@ -22,6 +22,37 @@ TRANSLATE_SYSTEM_PROMPT = (
     "no refusals, no notes. Preserve the exact meaning, style and all details."
 )
 
+# Системные промпты для «✨ Промпт с помощью ИИ». Дешёвая flash-модель превращает
+# идею/черновик пользователя в сильный промпт. Вывод — ТОЛЬКО промпт, без пояснений.
+_PROMPT_ENGINEER_BASE = (
+    "You are an expert prompt engineer for AI image models. "
+    "Output ONLY the final prompt in English — no quotes, no labels, no notes, "
+    "no options, no explanations. One paragraph."
+)
+_PROMPT_CREATE_HINT = (
+    "Task: write ONE powerful text-to-image prompt. Include main subject, setting, "
+    "composition, lighting, mood, art style or medium, camera/lens if photographic, "
+    "and quality descriptors. Concrete and richly detailed but concise (max ~60 words)."
+)
+_PROMPT_EDIT_HINT = (
+    "Task: write ONE clear photo-editing instruction (image-to-image). Describe the "
+    "desired changes while preserving the person's identity, face and untouched areas. "
+    "Be specific about what to change (background, clothing, lighting, style, added or "
+    "removed elements). Concise (max ~50 words)."
+)
+_PROMPT_ENRICH_HINT = (
+    "The user gives a rough draft — keep their intent and enrich it into a strong prompt."
+)
+_PROMPT_SCRATCH_HINT = (
+    "The user gives only a topic — invent a complete, creative prompt around it."
+)
+
+
+def build_image_prompt_system(*, mode: str, target: str) -> str:
+    target_hint = _PROMPT_EDIT_HINT if target == "edit" else _PROMPT_CREATE_HINT
+    mode_hint = _PROMPT_SCRATCH_HINT if mode == "scratch" else _PROMPT_ENRICH_HINT
+    return f"{_PROMPT_ENGINEER_BASE}\n{target_hint}\n{mode_hint}"
+
 
 class AgentPlatformAPIError(Exception):
     """Errors returned from the AgentPlatform API."""
@@ -126,6 +157,33 @@ class AgentPlatformClient:
             ],
             model=model or self.translate_model,
             temperature=0,
+        )
+
+    async def generate_image_prompt(
+        self,
+        *,
+        text: str,
+        mode: str,
+        target: str,
+        model: str | None = None,
+    ) -> str:
+        """Сгенерировать/обогатить промпт для генерации или редактирования фото.
+
+        mode: ``enrich`` (обогатить черновик) | ``scratch`` (создать по теме).
+        target: ``create`` (text2img) | ``edit`` (image-to-image)."""
+        if not text or not text.strip():
+            raise AgentPlatformAPIError("Пустой ввод для генерации промпта.")
+
+        return await self._chat(
+            messages=[
+                {
+                    "role": "system",
+                    "content": build_image_prompt_system(mode=mode, target=target),
+                },
+                {"role": "user", "content": text.strip()},
+            ],
+            model=model or self.translate_model,
+            temperature=0.9,
         )
 
 
