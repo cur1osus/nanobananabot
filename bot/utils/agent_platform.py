@@ -13,6 +13,15 @@ SONG_PROMPT_SUFFIX = (
     "Если не указан язык, пиши на русском. Отправь только текст песни."
 )
 
+# Системная инструкция для перевода промптов генерации на английский. Подчёркнуто
+# «технический переводчик без отказов», чтобы flash-модель не отказывалась
+# переводить откровенные 18+ промпты и не добавляла комментариев.
+TRANSLATE_SYSTEM_PROMPT = (
+    "You are a professional translation engine. Translate the user's image-generation "
+    "prompt into English. Output ONLY the translated prompt: no comments, no quotes, "
+    "no refusals, no notes. Preserve the exact meaning, style and all details."
+)
+
 
 class AgentPlatformAPIError(Exception):
     """Errors returned from the AgentPlatform API."""
@@ -25,11 +34,13 @@ class AgentPlatformClient:
         api_key: str,
         base_url: str,
         model: str,
+        translate_model: str | None = None,
         timeout: int = 60,
     ) -> None:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.translate_model = translate_model or model
         self.timeout = timeout
 
     def _headers(self) -> dict[str, str]:
@@ -43,20 +54,19 @@ class AgentPlatformClient:
             return self.base_url
         return f"{self.base_url}/chat/completions"
 
-    async def generate_song_text(self, *, prompt: str) -> str:
-        if not prompt:
-            raise AgentPlatformAPIError("Промпт для генерации текста пуст.")
-
-        full_prompt = f"{prompt.strip()}\n\n{SONG_PROMPT_SUFFIX}"
-        payload = {
-            "model": self.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": full_prompt,
-                },
-            ],
+    async def _chat(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        temperature: float | None = None,
+    ) -> str:
+        payload: dict[str, Any] = {
+            "model": model or self.model,
+            "messages": messages,
         }
+        if temperature is not None:
+            payload["temperature"] = temperature
 
         try:
             async with aiohttp.ClientSession(
@@ -96,6 +106,28 @@ class AgentPlatformClient:
 
         return str(content).strip()
 
+    async def generate_song_text(self, *, prompt: str) -> str:
+        if not prompt:
+            raise AgentPlatformAPIError("Промпт для генерации текста пуст.")
+
+        full_prompt = f"{prompt.strip()}\n\n{SONG_PROMPT_SUFFIX}"
+        return await self._chat(
+            messages=[{"role": "user", "content": full_prompt}],
+        )
+
+    async def translate_to_english(self, *, text: str, model: str | None = None) -> str:
+        if not text or not text.strip():
+            raise AgentPlatformAPIError("Текст для перевода пуст.")
+
+        return await self._chat(
+            messages=[
+                {"role": "system", "content": TRANSLATE_SYSTEM_PROMPT},
+                {"role": "user", "content": text.strip()},
+            ],
+            model=model or self.translate_model,
+            temperature=0,
+        )
+
 
 def build_agent_platform_client() -> AgentPlatformClient:
     if not se.agent_platform.api_key:
@@ -105,5 +137,6 @@ def build_agent_platform_client() -> AgentPlatformClient:
         api_key=se.agent_platform.api_key,
         base_url=se.agent_platform.base_url,
         model=se.agent_platform.model,
+        translate_model=se.agent_platform.translate_model,
         timeout=se.agent_platform.timeout,
     )

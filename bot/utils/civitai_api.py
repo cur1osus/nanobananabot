@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import collections.abc
 import logging
+import re
 
 import aiohttp
 
@@ -12,27 +13,62 @@ from bot.utils.image_tasks import ImageGenerationError, ImageGenerationTimeoutEr
 
 logger = logging.getLogger(__name__)
 
+_CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 
-async def _translate_prompt(prompt: str) -> str:
-    """Перевести промпт на английский через Google Translate.
 
-    Если перевод не нужен или не удался — возвращает оригинал.
-    """
+async def _translate_via_deep_translator(prompt: str) -> str | None:
+    """Запасной перевод через deep-translator (синхронный, в отдельном потоке)."""
     from deep_translator import GoogleTranslator
 
+    translated = await asyncio.to_thread(
+        GoogleTranslator(source="auto", target="en").translate, prompt
+    )
+    if translated and translated.strip():
+        return translated.strip()
+    return None
+
+
+async def _translate_prompt(prompt: str) -> str:
+    """Перевести промпт на английский через LLM (DeepSeek V4 Flash и т.п.).
+
+    Промпт без кириллицы считается уже англоязычным и не переводится. Основной
+    путь — LLM из agent_platform; при ошибке/таймауте/отказе откатываемся на
+    deep-translator, а затем на оригинал. Перевод выполняется в воркере генерации,
+    поэтому несколько секунд задержки не блокируют пользователя.
+    """
+    if not prompt or not prompt.strip():
+        return prompt
+
+    # Уже латиница/английский — переводить нечего (экономим вызов и время).
+    if not _CYRILLIC_RE.search(prompt):
+        return prompt
+
+    # Основной путь: LLM-перевод.
     try:
-        translated = await asyncio.to_thread(
-            GoogleTranslator(source="auto", target="en").translate, prompt
-        )
+        from bot.utils.agent_platform import build_agent_platform_client
+
+        client = build_agent_platform_client()
+        translated = await client.translate_to_english(text=prompt)
         if translated and translated.strip():
             logger.info(
-                "Translated prompt (%d chars → %d chars)",
-                len(prompt),
-                len(translated),
+                "Translated prompt via LLM (%s)", client.translate_model
             )
             return translated.strip()
     except Exception:
-        logger.exception("Translation failed, falling back to original prompt")
+        logger.warning(
+            "LLM-перевод не удался, пробую deep-translator", exc_info=True
+        )
+
+    # Фолбэк: deep-translator.
+    try:
+        fallback = await _translate_via_deep_translator(prompt)
+        if fallback:
+            logger.info("Translated prompt via deep-translator (fallback)")
+            return fallback
+    except Exception:
+        logger.warning(
+            "Резервный перевод не удался, использую оригинал", exc_info=True
+        )
 
     return prompt
 

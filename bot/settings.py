@@ -139,6 +139,8 @@ class AgentPlatformSettings(BaseSettings):
     api_key: str = ""
     base_url: str = "https://litellm.tokengate.ru/v1"
     model: str = "cloudru/openai/gpt-oss-120b"
+    # Дешёвая быстрая модель для перевода промптов на английский (флэш-класс).
+    translate_model: str = "deepseek/deepseek-v4-flash"
     timeout: int = 60
 
 
