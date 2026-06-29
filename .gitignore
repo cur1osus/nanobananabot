@@ -21,3 +21,5 @@ run.sh
 .uv-cache
 .claude
 commit_and_push.sh
+.mypy_cache/
+note*
