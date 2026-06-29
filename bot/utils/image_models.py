@@ -151,6 +151,11 @@ ALL_IMAGE_MODELS: Final[tuple[ImageModelOption, ...]] = (
 DEFAULT_IMAGE_MODEL_KEY: Final[str] = "standard"
 DEFAULT_ADULT_IMAGE_MODEL_KEY: Final[str] = "adult_flux_realistic"
 
+# Запасная open-weights модель (Prodia, FLUX.2 Klein 9B, без модерации) для
+# обычной генерации: если основная модель отклонила запрос по модерации, воркер
+# повторяет генерацию через неё. См. generation_runner._run_image.
+PRODIA_FALLBACK_MODEL_KEY: Final[str] = "adult_flux_klein"
+
 
 def get_image_model(key: str) -> ImageModelOption:
     for option in ALL_IMAGE_MODELS:

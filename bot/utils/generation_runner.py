@@ -17,10 +17,15 @@ from bot.keyboards.inline import ik_back_home, ik_image_result_actions
 from bot.utils.admin_notify import notify_admins_error
 from bot.utils.billing import refund_generation
 from bot.utils.http import get_http_session
-from bot.utils.image_models import get_image_model, is_adult_model_key
+from bot.utils.image_models import (
+    PRODIA_FALLBACK_MODEL_KEY,
+    get_image_model,
+    is_adult_model_key,
+)
 from bot.utils.image_tasks import (
     ImageGenerationError,
     ImageGenerationTimeoutError,
+    ImageModerationError,
     generate_image,
     image_generation_error_text,
 )
@@ -124,6 +129,7 @@ async def _run_image(
     scenario_steps = params.get("steps")
 
     positive_prompt = f"{model.prompt_prefix}{prompt}".strip()
+    used_fallback = False
 
     # CivitAI: при наличии сохранённого workflow_id доопрашиваем уже отправленную
     # генерацию вместо повторной отправки (переживание рестарта).
@@ -140,25 +146,59 @@ async def _run_image(
             task.provider_task_id = workflow_id
             await session.commit()
 
-        image_bytes = await generate_image(
-            prompt=positive_prompt,
-            model=model.create_api_model if is_create else model.api_model,
-            provider=model.provider,
-            reference_images=reference_images,
-            aspect_ratio=aspect_ratio,
-            output_format="jpeg",
-            negative_prompt=model.negative_prompt or None,
-            img2img_mode=model.img2img_mode,
-            steps=scenario_steps if scenario_steps is not None else model.steps,
-            cfg_scale=model.cfg_scale,
-            loras=list(model.loras) if model.loras else None,
-            strength=scenario_strength,
-            on_civitai_submit=_persist_workflow_id,
-        )
+        try:
+            image_bytes = await generate_image(
+                prompt=positive_prompt,
+                model=model.create_api_model if is_create else model.api_model,
+                provider=model.provider,
+                reference_images=reference_images,
+                aspect_ratio=aspect_ratio,
+                output_format="jpeg",
+                negative_prompt=model.negative_prompt or None,
+                img2img_mode=model.img2img_mode,
+                steps=scenario_steps if scenario_steps is not None else model.steps,
+                cfg_scale=model.cfg_scale,
+                loras=list(model.loras) if model.loras else None,
+                strength=scenario_strength,
+                on_civitai_submit=_persist_workflow_id,
+            )
+        except ImageModerationError:
+            # Раздел 18+ уже на open-weights модели — фолбэку неоткуда взяться.
+            if is_adult_model_key(model_key):
+                raise
+            # Основная модель отклонила запрос по модерации — повторяем через
+            # запасную open-weights модель (Prodia, без модерации).
+            fallback = get_image_model(PRODIA_FALLBACK_MODEL_KEY)
+            logger.info(
+                "Модерация модели %s, фолбэк на %s (Prodia)",
+                model_key,
+                fallback.key,
+            )
+            image_bytes = await generate_image(
+                prompt=prompt,
+                model=fallback.create_api_model if is_create else fallback.api_model,
+                provider=fallback.provider,
+                reference_images=reference_images,
+                aspect_ratio=aspect_ratio,
+                output_format="jpeg",
+            )
+            used_fallback = True
 
     chat_id = task.chat_id
     if chat_id is None:
         return
+
+    if used_fallback:
+        notice = (
+            "⚠️ Основная модель отклонила запрос (модерация). "
+            "Сгенерировано запасной моделью без модерации.\n\n"
+        )
+        model_line = ""
+    else:
+        notice = ""
+        model_line = (
+            "" if is_adult_model_key(model_key) else f"🎨 Модель: {model.title}\n"
+        )
 
     filename = f"generation_{task.id}_{model_key}.jpg"
     await bot.send_document(
@@ -166,11 +206,13 @@ async def _run_image(
         document=BufferedInputFile(file=image_bytes, filename=filename),
         caption="📎 Файл результата",
     )
-    model_line = "" if is_adult_model_key(model_key) else f"🎨 Модель: {model.title}\n"
     await bot.send_photo(
         chat_id,
         photo=BufferedInputFile(file=image_bytes, filename="preview.jpg"),
-        caption=f"✅ Готово!\n{model_line}💰 Списано: {task.credits_cost} кредитов",
+        caption=(
+            f"{notice}✅ Готово!\n{model_line}"
+            f"💰 Списано: {task.credits_cost} кредитов"
+        ),
         reply_markup=(
             await ik_back_home() if is_create else await ik_image_result_actions()
         ),

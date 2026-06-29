@@ -161,6 +161,32 @@ class ImageGenerationTimeoutError(ImageGenerationError):
     """Raised when image generation request times out after retries."""
 
 
+class ImageModerationError(ImageGenerationError):
+    """Запрос отклонён модерацией провайдера (NSFW/политика контента).
+
+    Отдельный тип, чтобы воркер мог отличить отказ модерации от прочих ошибок
+    и сделать фолбэк на open-weights модель без модерации (Prodia)."""
+
+
+# Маркеры в тексте ошибки провайдера, указывающие на отказ по модерации, а не
+# на технический сбой. Проверяются без учёта регистра.
+_MODERATION_MARKERS: tuple[str, ...] = (
+    "moderat",  # "Request Moderated", "content moderated"
+    "nsfw",
+    "inappropriate",
+    "content policy",
+    "safety",
+    "flagged",
+    "prohibited",
+    "not allowed",
+)
+
+
+def _is_moderation_message(message: str) -> bool:
+    low = message.lower()
+    return any(marker in low for marker in _MODERATION_MARKERS)
+
+
 def _aspect_ratio_to_dims(
     aspect_ratio: str, model_id: str | None = None
 ) -> tuple[int, int]:
@@ -372,6 +398,15 @@ async def generate_image(
                             )
                             await asyncio.sleep(delay)
                             continue
+                        if _is_moderation_message(str(exc)):
+                            logger.warning(
+                                "Runware модерация отклонила запрос (model=%s): %s",
+                                model_id,
+                                exc,
+                            )
+                            raise ImageModerationError(
+                                f"Запрос отклонён модерацией (model={model_id})"
+                            ) from exc
                         raise ImageGenerationError(
                             f"Ошибка Runware SDK: {exc}"
                         ) from exc
