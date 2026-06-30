@@ -67,7 +67,9 @@ async def _transcribe_routerai(
     }
     timeout = aiohttp.ClientTimeout(total=se.routerai.timeout)
     session = get_http_session()
-    async with session.post(url, json=payload, headers=headers, timeout=timeout) as resp:
+    async with session.post(
+        url, json=payload, headers=headers, timeout=timeout
+    ) as resp:
         data = await resp.json(content_type=None)
         if resp.status >= 400:
             message = (data or {}).get("error", {})
@@ -216,9 +218,7 @@ async def transcribe_message_audio(
                 audio_bytes, audio_format, language=language
             )
         except Exception:
-            logger.warning(
-                "RouterAI STT не удался, фолбэк на VseGpt", exc_info=True
-            )
+            logger.warning("RouterAI STT не удался, фолбэк на VseGpt", exc_info=True)
 
     suffix = Path(file_path).suffix or ".ogg"
     temp_path = _write_temp_audio_file(audio_bytes, suffix)

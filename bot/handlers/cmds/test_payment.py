@@ -59,6 +59,4 @@ async def test_payment_cmd(message: Message, user: UserRD) -> None:
             err,
             invoice.provider_data,
         )
-        await message.answer(
-            "Не удалось создать тестовый счёт. Подробности в логах."
-        )
+        await message.answer("Не удалось создать тестовый счёт. Подробности в логах.")

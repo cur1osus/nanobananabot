@@ -18,7 +18,7 @@ _CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 
 async def _translate_via_deep_translator(prompt: str) -> str | None:
     """Запасной перевод через deep-translator (синхронный, в отдельном потоке)."""
-    from deep_translator import GoogleTranslator
+    from deep_translator import GoogleTranslator  # type: ignore[import-untyped]
 
     translated = await asyncio.to_thread(
         GoogleTranslator(source="auto", target="en").translate, prompt
@@ -50,14 +50,10 @@ async def _translate_prompt(prompt: str) -> str:
         client = build_agent_platform_client()
         translated = await client.translate_to_english(text=prompt)
         if translated and translated.strip():
-            logger.info(
-                "Translated prompt via LLM (%s)", client.translate_model
-            )
+            logger.info("Translated prompt via LLM (%s)", client.translate_model)
             return translated.strip()
     except Exception:
-        logger.warning(
-            "LLM-перевод не удался, пробую deep-translator", exc_info=True
-        )
+        logger.warning("LLM-перевод не удался, пробую deep-translator", exc_info=True)
 
     # Фолбэк: deep-translator.
     try:
@@ -66,9 +62,7 @@ async def _translate_prompt(prompt: str) -> str:
             logger.info("Translated prompt via deep-translator (fallback)")
             return fallback
     except Exception:
-        logger.warning(
-            "Резервный перевод не удался, использую оригинал", exc_info=True
-        )
+        logger.warning("Резервный перевод не удался, использую оригинал", exc_info=True)
 
     return prompt
 

@@ -210,8 +210,7 @@ async def _run_image(
         chat_id,
         photo=BufferedInputFile(file=image_bytes, filename="preview.jpg"),
         caption=(
-            f"{notice}✅ Готово!\n{model_line}"
-            f"💰 Списано: {task.credits_cost} кредитов"
+            f"{notice}✅ Готово!\n{model_line}💰 Списано: {task.credits_cost} кредитов"
         ),
         reply_markup=(
             await ik_back_home() if is_create else await ik_image_result_actions()

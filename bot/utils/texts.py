@@ -109,6 +109,7 @@ AI_PROMPT_SCRATCH_ASK = (
     "🎲 Напишите тему или идею (пару слов) — ИИ создаст полноценный промпт."
 )
 
+
 def ai_prompt_result_text(prompt: str, summary: str = "") -> str:
     lines = ["✨ Готово!"]
     if summary:
@@ -120,6 +121,7 @@ def ai_prompt_result_text(prompt: str, summary: str = "") -> str:
         "Сгенерировать по нему или попробовать другой вариант?",
     ]
     return "\n".join(lines)
+
 
 MY_TRACKS_MENU_TEXT = (
     "🎧 Ниже все треки, которые были созданы тобой.\n"

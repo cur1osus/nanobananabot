@@ -31,9 +31,6 @@ typecheck:
 .PHONY: security
 security:
 	uv run bandit -r $(app-dir) -c pyproject.toml -q
-	uv export --no-dev --no-emit-project --format requirements-txt > .reqs.tmp
-	uvx --from safety safety check -r .reqs.tmp --output text || true
-	@rm -f .reqs.tmp
 
 
 .PHONY: complexity
@@ -42,16 +39,11 @@ complexity:
 	uv run radon mi $(app-dir) -s
 
 
-# Профилирование живого процесса бота без остановки и правок кода.
-# Использование: make profile PID=<pid>  (граф пламени → profile.svg)
-.PHONY: profile
-profile:
-	uv run py-spy record -o profile.svg --pid $(PID)
-
-
-# Полный статический контроль: стиль + типы + сложность + безопасность.
+# Полный статический контроль одним прогоном: стиль + типы + безопасность +
+# сложность (см. scripts/check.sh). Падает, если обязательный чекер нашёл проблему.
 .PHONY: check
-check: lint typecheck complexity security
+check:
+	./scripts/check.sh $(app-dir)
 
 
 .PHONY: test

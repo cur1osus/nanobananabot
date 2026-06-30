@@ -106,9 +106,7 @@ ignore = [
 dev = [
     "bandit>=1.9.4",
     "mypy>=2.1.0",
-    "py-spy>=0.4.2",
     "radon>=6.0.1",
-    "safety>=3.2.11",
 ]
 
 [tool.bandit]

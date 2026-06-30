@@ -42,9 +42,7 @@ _PROMPT_EDIT_HINT = (
     "Be specific about what to change (background, clothing, lighting, style, added or "
     "removed elements). Concise (max ~50 words)."
 )
-_PROMPT_ENRICH_HINT = (
-    "The user gives a rough draft — keep their intent and enrich it into a strong prompt."
-)
+_PROMPT_ENRICH_HINT = "The user gives a rough draft — keep their intent and enrich it into a strong prompt."
 _PROMPT_SCRATCH_HINT = (
     "The user gives only a topic — invent a complete, creative prompt around it."
 )
