@@ -447,21 +447,23 @@ async def handle_result_actions(
             )
         return
 
-    if callback_data.action == "first_photo":
+    if callback_data.action == "keep_photos":
         if not data.photos:
             await query.answer("Нет сохраненных фото", show_alert=True)
             return
         await update_image_data(
             state,
-            photos=[data.photos[0]],
+            photos=list(data.photos),
             prompt="",
             prompt_requested=True,
         )
         await state.set_state(ImageGenerationState.waiting_prompt)
         await query.answer()
         if isinstance(query.message, Message):
+            count = len(data.photos)
+            kept = "фото" if count == 1 else f"фото ({count} шт.)"
             await query.message.answer(
-                "Оставил 1-е фото. Теперь пришлите новый промпт."
+                f"Оставил те же {kept}. Теперь пришлите новый промпт."
             )
         return
 
@@ -941,6 +943,8 @@ async def ai_prompt_accept(
         await query.answer("Промпт ещё не готов", show_alert=True)
         return
     await query.answer()
+    if not isinstance(query.message, Message):
+        return
     if target == "create":
         await state.set_state(ImageGenerationState.waiting_create_prompt)
         await _run_create_generation(

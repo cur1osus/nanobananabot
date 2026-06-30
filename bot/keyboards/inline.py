@@ -185,8 +185,8 @@ async def ik_image_result_actions() -> InlineKeyboardMarkup:
         callback_data=ImageResultAction(action="similar").pack(),
     )
     builder.button(
-        text="1️⃣ Начать с 1-го фото",
-        callback_data=ImageResultAction(action="first_photo").pack(),
+        text="🔁 Те же фото, новый промпт",
+        callback_data=ImageResultAction(action="keep_photos").pack(),
     )
     builder.button(
         text="🖼 Начать заново",
