@@ -83,20 +83,23 @@ def _snippet(prompt: str) -> str:
 
 
 def _history_text(tasks: list[GenerationTaskModel], page: int, pages: int) -> str:
-    lines = ["🗂 <b>История генераций</b>\n"]
+    blocks: list[str] = []
     for idx, task in enumerate(tasks, start=1):
         params = _parse_params(task)
         kind = _KIND_LABELS.get(task.kind, task.kind)
         status = _STATUS_LABELS.get(task.status, task.status)
         when = task.created_at.strftime("%d.%m %H:%M") if task.created_at else "—"
         prompt = _snippet(str(params.get("prompt", "")))
-        lines.append(
-            f"{idx}. {kind} · {_model_title(task.kind, params)} · {status}\n"
-            f"   <i>{when}</i> — {prompt}"
+        blocks.append(
+            f"<b>{idx}.</b> {kind} · {status}\n"
+            f"🎨 {_model_title(task.kind, params)}\n"
+            f"🕐 {when}\n"
+            f"📝 {prompt}"
         )
+    text = "🗂 <b>История генераций</b>\n\n" + "\n\n".join(blocks)
     if pages > 1:
-        lines.append(f"\nСтраница {page}/{pages}")
-    return "\n".join(lines)
+        text += f"\n\nСтраница {page}/{pages}"
+    return text
 
 
 def _history_markup(

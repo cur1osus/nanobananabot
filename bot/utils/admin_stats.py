@@ -197,8 +197,12 @@ def _format_gen_promo(
     videos = by_kind.get(GenerationKind.VIDEO.value, 0)
     return (
         f"\n\n🎨 Генерации: {total} (✅ {success})\n"
-        f"  правки {edits} · генерации {creates} · видео {videos}\n"
-        f"🎁 Промо: {promo_activations} акт. / {promo_credits} кред."
+        f"• правки {edits}\n"
+        f"• генерации {creates}\n"
+        f"• видео {videos}\n\n"
+        f"🎁 Промо\n"
+        f"• активаций {promo_activations}\n"
+        f"• кредитов {promo_credits}"
     )
 
 
