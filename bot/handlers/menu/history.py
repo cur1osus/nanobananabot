@@ -19,6 +19,7 @@ from bot.db.enum import GenerationKind, GenerationTaskStatus
 from bot.db.models import GenerationTaskModel
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import GenHistoryAction, GenHistoryPage, MenuAction
+from bot.keyboards.inline import BACK_BUTTON_TEXT
 from bot.utils.billing import (
     CreditsExhausted,
     GenerationBusy,
@@ -140,7 +141,7 @@ def _history_markup(
 
     builder.row(
         InlineKeyboardButton(
-            text="🏠 Главное меню", callback_data=MenuAction(action="home").pack()
+            text=BACK_BUTTON_TEXT, callback_data=MenuAction(action="profile").pack()
         )
     )
     return builder
