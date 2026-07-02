@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 from aiogram.types import User
-from sqlalchemy import CursorResult, func, select, update
+from sqlalchemy import CursorResult, and_, case, func, select, update
 from sqlalchemy.sql.operators import eq, ne
 
 from .models import UserModel
@@ -113,10 +113,33 @@ async def refund_user_credits(
     if amount <= 0:
         return
 
+    # Возврат восстанавливает и «подарочность» кредитов, если окно подарка ещё
+    # активно: при списании gift_credits уменьшался вместе с общим балансом, и
+    # без этого возвращённые кредиты стали бы бессрочными (подарок «не сгорал»).
+    # Восстанавливаем только когда остаток подарка ещё > 0 (частично потраченный
+    # активный подарок) — чтобы не пометить подарочными постоянные кредиты; LEAST
+    # не даёт gift_credits превысить новый общий баланс.
+    now = datetime.now(tz=UTC).replace(tzinfo=None)
     stmt = (
         update(UserModel)
         .where(eq(UserModel.user_id, user.user_id))
-        .values(credits=UserModel.credits + amount)
+        .values(
+            credits=UserModel.credits + amount,
+            gift_credits=case(
+                (
+                    and_(
+                        UserModel.gift_credits > 0,
+                        UserModel.gift_expires_at.is_not(None),
+                        UserModel.gift_expires_at > now,
+                    ),
+                    func.least(
+                        UserModel.gift_credits + amount,
+                        UserModel.credits + amount,
+                    ),
+                ),
+                else_=UserModel.gift_credits,
+            ),
+        )
     )
     await session.execute(stmt)
     await session.commit()

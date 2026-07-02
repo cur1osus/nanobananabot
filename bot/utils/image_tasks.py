@@ -130,6 +130,7 @@ _MODEL_LOAD_MAX_ATTEMPTS: int = 3
 
 _runware_semaphore: asyncio.Semaphore | None = None
 _runware_client: Runware | None = None
+_runware_client_lock: asyncio.Lock | None = None
 
 
 def _get_runware_semaphore() -> asyncio.Semaphore:
@@ -139,18 +140,29 @@ def _get_runware_semaphore() -> asyncio.Semaphore:
     return _runware_semaphore
 
 
+def _get_runware_client_lock() -> asyncio.Lock:
+    global _runware_client_lock
+    if _runware_client_lock is None:
+        _runware_client_lock = asyncio.Lock()
+    return _runware_client_lock
+
+
 async def _get_runware_client() -> Runware:
     global _runware_client
-    if _runware_client is None:
-        _runware_client = Runware(
-            api_key=se.image_backend.api_key,
-            timeout=se.image_backend.timeout * 1000,
-            max_retries=se.image_backend.rate_limit_retries,
-            retry_delay=int(se.image_backend.rate_limit_backoff),
-        )
-    if not _runware_client.connected():
-        await _runware_client.connect()
-    return _runware_client
+    # Создание клиента и (пере)подключение защищены замком: параллельные
+    # генерации (семафор=3) иначе могли бы одновременно инициировать connect()
+    # на одном общем websocket-клиенте.
+    async with _get_runware_client_lock():
+        if _runware_client is None:
+            _runware_client = Runware(
+                api_key=se.image_backend.api_key,
+                timeout=se.image_backend.timeout * 1000,
+                max_retries=se.image_backend.rate_limit_retries,
+                retry_delay=int(se.image_backend.rate_limit_backoff),
+            )
+        if not _runware_client.connected():
+            await _runware_client.connect()
+        return _runware_client
 
 
 class ImageGenerationError(RuntimeError):

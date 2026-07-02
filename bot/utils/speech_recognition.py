@@ -241,19 +241,19 @@ async def get_vsegpt_balance() -> float:
     }
 
     timeout = aiohttp.ClientTimeout(total=10)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url, headers=headers) as response:
-            if response.status != 200:
-                text = await response.text()
-                raise SpeechRecognitionError(
-                    f"VseGpt API error {response.status}: {text}"
-                )
+    # Общий ClientSession переиспользует пул соединений/TLS вместо создания новой
+    # сессии (и хендшейка) на каждый запрос баланса.
+    session = get_http_session()
+    async with session.get(url, headers=headers, timeout=timeout) as response:
+        if response.status != 200:
+            text = await response.text()
+            raise SpeechRecognitionError(f"VseGpt API error {response.status}: {text}")
 
-            data = await response.json()
-            if data.get("status") != "ok":
-                reason = data.get("reason", "Unknown error")
-                raise SpeechRecognitionError(f"VseGpt API error: {reason}")
+        data = await response.json()
+        if data.get("status") != "ok":
+            reason = data.get("reason", "Unknown error")
+            raise SpeechRecognitionError(f"VseGpt API error: {reason}")
 
-            credits_data = data.get("data", {})
-            credits = credits_data.get("credits", 0)
-            return float(credits)
+        credits_data = data.get("data", {})
+        credits = credits_data.get("credits", 0)
+        return float(credits)

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
 from aiogram import Bot
+from aiogram.exceptions import TelegramRetryAfter
 from aiogram.types import BufferedInputFile
 from sqlalchemy import select
 
@@ -42,6 +45,26 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Максимум повторов первичной доставки при флуд-контроле Telegram.
+_DELIVERY_RETRY_ATTEMPTS = 3
+
+
+@dataclass
+class _ImageDelivery:
+    chat_id: int
+    image_bytes: bytes
+    doc_filename: str
+    caption: str
+    is_create: bool
+
+
+@dataclass
+class _VideoDelivery:
+    chat_id: int
+    video_bytes: bytes
+    filename: str
+    caption: str
+
 
 async def run_generation_task(
     *,
@@ -52,9 +75,17 @@ async def run_generation_task(
 ) -> None:
     """Выполнить одну генерацию из очереди и доставить результат.
 
-    Задача уже переведена диспетчером в ``processing``. На любой ошибке кредиты
-    возвращаются, задача помечается ``refunded``, пользователю отправляется
-    понятное сообщение.
+    Задача уже переведена диспетчером в ``processing``. Порядок гарантий:
+
+    1. Пока результат не получен — любая ошибка возвращает кредиты и помечает
+       задачу ``refunded``.
+    2. Как только результат сгенерирован, доставляем его пользователю. Если
+       **первичная** отправка (превью-фото / видео) не удалась — пользователь
+       ничего не увидел, поэтому кредиты возвращаются как при ошибке генерации.
+    3. Как только первичная отправка прошла, задача считается ``success`` и
+       кредиты остаются списанными. Оставшиеся отправки (файл без сжатия) —
+       best-effort: их сбой логируется, но НЕ приводит к возврату (иначе
+       пользователь получил бы результат бесплатно).
     """
     async with sessionmaker() as session:
         task = await session.get(GenerationTaskModel, task_id)
@@ -74,9 +105,13 @@ async def run_generation_task(
         params: dict[str, Any] = json.loads(task.params or "{}")
         try:
             if task.kind == GenerationKind.VIDEO.value:
-                await _run_video(bot=bot, task=task, params=params)
+                delivery: _ImageDelivery | _VideoDelivery | None = await _run_video(
+                    bot=bot, task=task, params=params
+                )
             else:
-                await _run_image(bot=bot, session=session, task=task, params=params)
+                delivery = await _run_image(
+                    bot=bot, session=session, task=task, params=params
+                )
         except (
             ImageGenerationError,
             ImageGenerationTimeoutError,
@@ -107,8 +142,44 @@ async def run_generation_task(
             )
             return
 
+        if delivery is None:
+            # Нечего доставлять (нет chat_id) — результат получен, кредиты
+            # остаются списанными.
+            task.status = GenerationTaskStatus.SUCCESS.value
+            await session.commit()
+            return
+
+        # Первичная доставка: её успех == «пользователь получил результат».
+        try:
+            await _deliver_primary(bot, delivery)
+        except Exception as exc:
+            await _fail(
+                bot=bot,
+                session=session,
+                redis=redis,
+                user=user,
+                task=task,
+                params=params,
+                error=exc,
+                text="❌ Не удалось доставить результат. Кредиты возвращены, "
+                "попробуйте ещё раз чуть позже.",
+            )
+            return
+
+        # Точка невозврата: результат доставлен, кредиты остаются списанными.
         task.status = GenerationTaskStatus.SUCCESS.value
         await session.commit()
+
+        # Остаток доставки (файл без сжатия) — best-effort, без возврата.
+        try:
+            await _deliver_rest(bot, delivery)
+        except Exception:
+            logger.warning(
+                "Дополнительная доставка задачи %s не удалась (без возврата)",
+                task.id,
+                exc_info=True,
+            )
+
         await _delete_status_message(bot, task)
 
 
@@ -118,7 +189,7 @@ async def _run_image(
     session: AsyncSession,
     task: GenerationTaskModel,
     params: dict[str, Any],
-) -> None:
+) -> _ImageDelivery | None:
     model_key = str(params.get("model_key", ""))
     model = get_image_model(model_key)
     prompt = str(params.get("prompt", ""))
@@ -141,6 +212,13 @@ async def _run_image(
         reference_images = (
             await _fetch_reference_images(bot, photos) if not is_create else None
         )
+        # Редактирование без единого пригодного референса превратилось бы в
+        # text-to-image по одному промпту — это не то, за что заплатил
+        # пользователь. Считаем это ошибкой генерации (кредиты вернутся).
+        if not is_create and photos and not reference_images:
+            raise ImageGenerationError(
+                "Не удалось подготовить ни одного референс-изображения."
+            )
 
         async def _persist_workflow_id(workflow_id: str) -> None:
             task.provider_task_id = workflow_id
@@ -186,7 +264,7 @@ async def _run_image(
 
     chat_id = task.chat_id
     if chat_id is None:
-        return
+        return None
 
     if used_fallback:
         notice = (
@@ -200,21 +278,15 @@ async def _run_image(
             "" if is_adult_model_key(model_key) else f"🎨 Модель: {model.title}\n"
         )
 
-    filename = f"generation_{task.id}_{model_key}.jpg"
-    await bot.send_document(
-        chat_id,
-        document=BufferedInputFile(file=image_bytes, filename=filename),
-        caption="📎 Файл результата",
+    caption = (
+        f"{notice}✅ Готово!\n{model_line}💰 Списано: {task.credits_cost} кредитов"
     )
-    await bot.send_photo(
-        chat_id,
-        photo=BufferedInputFile(file=image_bytes, filename="preview.jpg"),
-        caption=(
-            f"{notice}✅ Готово!\n{model_line}💰 Списано: {task.credits_cost} кредитов"
-        ),
-        reply_markup=(
-            await ik_back_home() if is_create else await ik_image_result_actions()
-        ),
+    return _ImageDelivery(
+        chat_id=chat_id,
+        image_bytes=image_bytes,
+        doc_filename=f"generation_{task.id}_{model_key}.jpg",
+        caption=caption,
+        is_create=is_create,
     )
 
 
@@ -223,7 +295,7 @@ async def _run_video(
     bot: Bot,
     task: GenerationTaskModel,
     params: dict[str, Any],
-) -> None:
+) -> _VideoDelivery | None:
     model_key = str(params.get("model_key", ""))
     model = get_kling_model(model_key)
     prompt = str(params.get("prompt", "")).strip()
@@ -252,23 +324,81 @@ async def _run_video(
 
     chat_id = task.chat_id
     if chat_id is None:
+        return None
+
+    caption = (
+        f"🎬 Готово!\n"
+        f"📹 Модель: {model.title}\n"
+        f"⏱ Длительность: {duration} сек.\n"
+        f"💰 Списано: {task.credits_cost} кредитов"
+    )
+    return _VideoDelivery(
+        chat_id=chat_id,
+        video_bytes=video_bytes,
+        filename=f"video_{task.id}.mp4",
+        caption=caption,
+    )
+
+
+async def _send_with_retry(factory: Any) -> None:
+    """Отправить, повторяя при флуд-контроле Telegram (TelegramRetryAfter)."""
+    for attempt in range(_DELIVERY_RETRY_ATTEMPTS):
+        try:
+            await factory()
+            return
+        except TelegramRetryAfter as err:
+            if attempt == _DELIVERY_RETRY_ATTEMPTS - 1:
+                raise
+            await asyncio.sleep(err.retry_after)
+
+
+async def _deliver_primary(bot: Bot, delivery: _ImageDelivery | _VideoDelivery) -> None:
+    if isinstance(delivery, _ImageDelivery):
+        markup = (
+            await ik_back_home()
+            if delivery.is_create
+            else await ik_image_result_actions()
+        )
+        await _send_with_retry(
+            lambda: bot.send_photo(
+                delivery.chat_id,
+                photo=BufferedInputFile(
+                    file=delivery.image_bytes, filename="preview.jpg"
+                ),
+                caption=delivery.caption,
+                reply_markup=markup,
+            )
+        )
         return
 
-    filename = f"video_{task.id}.mp4"
-    await bot.send_video(
-        chat_id,
-        video=BufferedInputFile(file=video_bytes, filename=filename),
-        caption=(
-            f"🎬 Готово!\n"
-            f"📹 Модель: {model.title}\n"
-            f"⏱ Длительность: {duration} сек.\n"
-            f"💰 Списано: {task.credits_cost} кредитов"
-        ),
-        reply_markup=await ik_back_home(),
+    await _send_with_retry(
+        lambda: bot.send_video(
+            delivery.chat_id,
+            video=BufferedInputFile(
+                file=delivery.video_bytes, filename=delivery.filename
+            ),
+            caption=delivery.caption,
+            reply_markup=None,
+        )
     )
+
+
+async def _deliver_rest(bot: Bot, delivery: _ImageDelivery | _VideoDelivery) -> None:
+    if isinstance(delivery, _ImageDelivery):
+        await bot.send_document(
+            delivery.chat_id,
+            document=BufferedInputFile(
+                file=delivery.image_bytes, filename=delivery.doc_filename
+            ),
+            caption="📎 Файл результата",
+        )
+        return
+
     await bot.send_document(
-        chat_id,
-        document=BufferedInputFile(file=video_bytes, filename=filename),
+        delivery.chat_id,
+        document=BufferedInputFile(
+            file=delivery.video_bytes, filename=delivery.filename
+        ),
         caption="📥 Без сжатия",
     )
 

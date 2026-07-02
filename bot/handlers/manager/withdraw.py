@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import CursorResult, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db.enum import TransactionStatus, TransactionType
@@ -21,6 +22,11 @@ from bot.utils.formatting import format_rub
 
 router = Router()
 logger = logging.getLogger(__name__)
+
+_ACTIVE_WITHDRAW_STATUSES = (
+    TransactionStatus.PENDING.value,
+    TransactionStatus.ASSIGNED.value,
+)
 
 
 @router.callback_query(WithdrawAction.filter(F.action == "done"))
@@ -57,14 +63,29 @@ async def withdraw_done(
         )
         return
 
-    transaction.status = TransactionStatus.COMPLETED.value
-    transaction.manager_id = query.from_user.id
+    # Переход pending/assigned → completed атомарным UPDATE с проверкой текущего
+    # статуса: два менеджера не смогут завершить одну заявку одновременно.
     try:
+        result = await session.execute(
+            update(TransactionModel)
+            .where(
+                TransactionModel.id == transaction.id,
+                TransactionModel.status.in_(_ACTIVE_WITHDRAW_STATUSES),
+            )
+            .values(
+                status=TransactionStatus.COMPLETED.value,
+                manager_id=query.from_user.id,
+            )
+        )
         await session.commit()
     except Exception as err:
         await session.rollback()
         logger.warning("Не удалось завершить заявку на вывод: %s", err)
         await query.answer("Не удалось завершить заявку. Попробуйте позже.")
+        return
+
+    if cast(CursorResult, result).rowcount == 0:
+        await query.answer("Заявка уже обработана.", show_alert=True)
         return
 
     user_db = await session.scalar(
@@ -278,13 +299,43 @@ async def withdraw_error_reason(
             "Не удалось найти пользователя для возврата по заявке %s",
             transaction_id,
         )
-    elif transaction.amount > 0:
-        user_db.balance += transaction.amount
 
-    transaction.status = TransactionStatus.FAILED.value
-    transaction.manager_id = message.from_user.id
-    transaction.details = _append_error_details(transaction.details, reason)
     try:
+        # Переход pending/assigned → failed атомарным UPDATE с проверкой статуса:
+        # если заявку уже завершил другой менеджер, rowcount == 0 и возврат
+        # баланса не выполняется (иначе средства вернулись бы дважды).
+        result = await session.execute(
+            update(TransactionModel)
+            .where(
+                TransactionModel.id == transaction.id,
+                TransactionModel.status.in_(_ACTIVE_WITHDRAW_STATUSES),
+            )
+            .values(
+                status=TransactionStatus.FAILED.value,
+                manager_id=message.from_user.id,
+                details=_append_error_details(transaction.details, reason),
+            )
+        )
+        if cast(CursorResult, result).rowcount == 0:
+            await session.rollback()
+            await state.clear()
+            await message.answer(
+                "Эта заявка уже завершена.",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            return
+
+        # Возврат баланса — атомарным UPDATE (`balance = balance + :amount`),
+        # а не read-modify-write по ORM-объекту: иначе параллельное начисление
+        # реферального бонуса в другой сессии было бы затёрто устаревшим
+        # значением из этой сессии. Выполняем только после выигранного перехода.
+        if user_db and transaction.amount > 0:
+            await session.execute(
+                update(UserModel)
+                .where(UserModel.id == transaction.user_idpk)
+                .values(balance=UserModel.balance + transaction.amount)
+            )
+
         await session.commit()
     except Exception as err:
         await session.rollback()
