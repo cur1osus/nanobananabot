@@ -9,14 +9,14 @@ from bot.handlers.cmds import broadcast
 class _Forbidden(TelegramForbiddenError):
     """Имитация блокировки бота пользователем без конструирования метода."""
 
-    def __init__(self) -> None:  # noqa: D107
+    def __init__(self) -> None:
         pass
 
 
 class _RetryAfter(TelegramRetryAfter):
     """Имитация flood-control с нулевой паузой."""
 
-    def __init__(self, retry_after: int = 0) -> None:  # noqa: D107
+    def __init__(self, retry_after: int = 0) -> None:
         self.retry_after = retry_after
 
 

@@ -3,22 +3,27 @@ from __future__ import annotations
 from typing import Any
 
 from bot.handlers.menu.tracks import _extract_tracks
-from bot.keyboards.inline import ik_main
+from bot.keyboards.inline import ik_main, ik_profile_menu
 from bot.utils.background_task_helpers import send_tracks
 from bot.utils.suno_api import SunoClient
 
 
-async def test_main_keyboard_contains_music_sections() -> None:
-    markup = await ik_main(is_admin=False)
-    callback_data = [
+def _callback_data(markup) -> list[str]:
+    return [
         button.callback_data
         for row in markup.inline_keyboard
         for button in row
         if button.callback_data
     ]
 
-    assert "menu:music" in callback_data
-    assert "menu:tracks" in callback_data
+
+async def test_main_keyboard_contains_music_sections() -> None:
+    # Создание музыки — в главном меню, «Мои треки» — в разделе профиля.
+    main = _callback_data(await ik_main(is_admin=False))
+    profile = _callback_data(await ik_profile_menu())
+
+    assert "menu:music" in main
+    assert "menu:tracks" in profile
 
 
 def test_extract_tracks_accepts_suno_response_formats() -> None:
