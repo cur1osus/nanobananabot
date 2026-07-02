@@ -10,8 +10,18 @@ import aiohttp
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db.enum import TransactionStatus, TransactionType
-from bot.db.models import TransactionModel, UserModel
+from bot.db.enum import (
+    GenerationKind,
+    GenerationTaskStatus,
+    TransactionStatus,
+    TransactionType,
+)
+from bot.db.models import (
+    GenerationTaskModel,
+    PromoRedemptionModel,
+    TransactionModel,
+    UserModel,
+)
 from bot.db.redis.user_model import UserRD
 from bot.settings import se
 from bot.utils.formatting import format_rub
@@ -81,6 +91,16 @@ async def build_admin_info_text(
         bounds.end,
     )
 
+    gen_by_kind, gen_success = await _generation_stats(
+        session, bounds.start, bounds.end
+    )
+    promo_activations, promo_credits = await _promo_stats(
+        session, bounds.start, bounds.end
+    )
+    extra_block = _format_gen_promo(
+        gen_by_kind, gen_success, promo_activations, promo_credits
+    )
+
     if period == "all":
         card_sales = sales_current.get(CARD_CURRENCY, 0)
         stars_sales = sales_current.get(STARS_CURRENCY, 0)
@@ -91,6 +111,7 @@ async def build_admin_info_text(
             f"Выводы реферерам: {format_rub(withdrawals_current)} р.\n\n"
             f"Всего пользователей: {total_users}\n"
             f"Онлайн ({ONLINE_MINUTES} мин): {online_users}"
+            f"{extra_block}"
         )
 
     sales_prev = await _sum_sales(session, bounds.prev_start, bounds.prev_end)
@@ -109,6 +130,75 @@ async def build_admin_info_text(
         f"Выводы реферерам: {format_rub(withdrawals_current)} р. ({_format_delta_rub(withdrawals_current - withdrawals_prev)})\n\n"
         f"Всего пользователей: {total_users} (+{new_users})\n"
         f"Онлайн ({ONLINE_MINUTES} мин): {online_users}"
+        f"{extra_block}"
+    )
+
+
+async def _generation_stats(
+    session: AsyncSession, start: datetime, end: datetime
+) -> tuple[dict[str, int], int]:
+    """Число генераций за период по видам и число успешных."""
+    rows = await session.execute(
+        select(GenerationTaskModel.kind, func.count(GenerationTaskModel.id))
+        .where(
+            GenerationTaskModel.created_at >= start,
+            GenerationTaskModel.created_at < end,
+        )
+        .group_by(GenerationTaskModel.kind)
+    )
+    by_kind = {kind: int(count or 0) for kind, count in rows}
+    success = (
+        await session.scalar(
+            select(func.count(GenerationTaskModel.id)).where(
+                GenerationTaskModel.status == GenerationTaskStatus.SUCCESS.value,
+                GenerationTaskModel.created_at >= start,
+                GenerationTaskModel.created_at < end,
+            )
+        )
+        or 0
+    )
+    return by_kind, int(success)
+
+
+async def _promo_stats(
+    session: AsyncSession, start: datetime, end: datetime
+) -> tuple[int, int]:
+    """Число активаций промокодов и суммарно начисленных по ним кредитов."""
+    activations = (
+        await session.scalar(
+            select(func.count(PromoRedemptionModel.id)).where(
+                PromoRedemptionModel.created_at >= start,
+                PromoRedemptionModel.created_at < end,
+            )
+        )
+        or 0
+    )
+    credits = (
+        await session.scalar(
+            select(func.coalesce(func.sum(PromoRedemptionModel.credits), 0)).where(
+                PromoRedemptionModel.created_at >= start,
+                PromoRedemptionModel.created_at < end,
+            )
+        )
+        or 0
+    )
+    return int(activations), int(credits)
+
+
+def _format_gen_promo(
+    by_kind: dict[str, int],
+    success: int,
+    promo_activations: int,
+    promo_credits: int,
+) -> str:
+    total = sum(by_kind.values())
+    edits = by_kind.get(GenerationKind.IMAGE_EDIT.value, 0)
+    creates = by_kind.get(GenerationKind.IMAGE_CREATE.value, 0)
+    videos = by_kind.get(GenerationKind.VIDEO.value, 0)
+    return (
+        f"\n\n🎨 Генерации: {total} (✅ {success})\n"
+        f"  правки {edits} · генерации {creates} · видео {videos}\n"
+        f"🎁 Промо: {promo_activations} акт. / {promo_credits} кред."
     )
 
 
