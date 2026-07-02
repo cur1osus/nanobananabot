@@ -4,7 +4,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from bot.db.enum import GenerationTaskStatus
 from bot.db.func import charge_user_credits, refund_user_credits
@@ -23,9 +23,15 @@ _ACTIVE_STATUSES = (
     GenerationTaskStatus.PROCESSING.value,
 )
 
+# Асинхронная «студия»: пользователь может держать в работе до N генераций
+# одновременно (queued+processing). Глобальную параллельность воркера держим
+# выше (см. background_tasks.MAX_CONCURRENT_GENERATIONS), чтобы один пользователь
+# не занимал все слоты.
+MAX_ACTIVE_GENERATIONS_PER_USER = 3
+
 
 class GenerationBusy(Exception):
-    """У пользователя уже идёт генерация — параллельный запуск запрещён."""
+    """У пользователя уже максимум активных генераций — очередь заполнена."""
 
 
 class CreditsExhausted(Exception):
@@ -49,26 +55,24 @@ async def enqueue_generation(
 ) -> GenerationTaskModel:
     """Поставить генерацию в очередь с гарантией оплаты и переживанием рестарта.
 
-    1. Проверяем, что у пользователя нет другой активной генерации
-       (``queued``/``processing``) — один запуск на пользователя.
+    1. Проверяем, что у пользователя меньше ``MAX_ACTIVE_GENERATIONS_PER_USER``
+       активных генераций (``queued``/``processing``).
     2. Атомарно списываем кредиты (``WHERE credits >= cost``) ДО постановки.
     3. Создаём запись ``GenerationTaskModel`` в статусе ``queued`` со всеми
        параметрами, нужными воркеру для выполнения (в т.ч. после рестарта).
 
-    Бросает :class:`GenerationBusy`, если генерация уже идёт, и
-    :class:`CreditsExhausted`, если кредитов не хватило. Проверка «один на
-    пользователя» безопасна без отдельного замка: апдейты одного пользователя
-    сериализуются per-user изоляцией событий aiogram.
+    Бросает :class:`GenerationBusy`, если лимит активных генераций исчерпан, и
+    :class:`CreditsExhausted`, если кредитов не хватило. Подсчёт активных
+    безопасен без отдельного замка: апдейты одного пользователя сериализуются
+    per-user изоляцией событий aiogram.
     """
-    existing = await session.scalar(
-        select(GenerationTaskModel.id)
-        .where(
+    active_count = await session.scalar(
+        select(func.count(GenerationTaskModel.id)).where(
             GenerationTaskModel.user_idpk == user.id,
             GenerationTaskModel.status.in_(_ACTIVE_STATUSES),
         )
-        .limit(1)
     )
-    if existing is not None:
+    if (active_count or 0) >= MAX_ACTIVE_GENERATIONS_PER_USER:
         raise GenerationBusy
 
     # Задачу добавляем в сессию ДО списания: единственный commit внутри

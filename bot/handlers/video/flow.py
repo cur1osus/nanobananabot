@@ -258,7 +258,7 @@ async def start_video_generation(
         )
     except GenerationBusy:
         await status_msg.edit_text(
-            "⏳ Предыдущая генерация ещё выполняется. Дождитесь результата и попробуйте снова."
+            "⏳ Достигнут лимит одновременных генераций (3). Дождитесь завершения одной из них и попробуйте снова."
         )
     except CreditsExhausted:
         await status_msg.edit_text(f"Недостаточно кредитов. Нужно: {cost}.")

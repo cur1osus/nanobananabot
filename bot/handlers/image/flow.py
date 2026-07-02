@@ -169,7 +169,7 @@ async def _run_image_generation(
         )
     except GenerationBusy:
         await status_msg.edit_text(
-            "⏳ Предыдущая генерация ещё выполняется. Дождитесь результата и попробуйте снова."
+            "⏳ Достигнут лимит одновременных генераций (3). Дождитесь завершения одной из них и попробуйте снова."
         )
         return
     except CreditsExhausted:
@@ -238,7 +238,7 @@ async def _run_create_generation(
         )
     except GenerationBusy:
         await status_msg.edit_text(
-            "⏳ Предыдущая генерация ещё выполняется. Дождитесь результата и попробуйте снова."
+            "⏳ Достигнут лимит одновременных генераций (3). Дождитесь завершения одной из них и попробуйте снова."
         )
         return
     except CreditsExhausted:
