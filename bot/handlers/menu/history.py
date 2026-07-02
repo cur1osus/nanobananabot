@@ -31,7 +31,7 @@ from bot.utils.video_models import get_kling_model, video_cost
 router = Router()
 logger = logging.getLogger(__name__)
 
-PAGE_SIZE = 6
+PAGE_SIZE = 4
 _PROMPT_SNIPPET = 60
 
 _KIND_LABELS = {
@@ -99,6 +99,10 @@ def _history_text(tasks: list[GenerationTaskModel], page: int, pages: int) -> st
     text = "🗂 <b>История генераций</b>\n\n" + "\n\n".join(blocks)
     if pages > 1:
         text += f"\n\nСтраница {page}/{pages}"
+    text += (
+        "\n\nℹ️ Кнопки <b>🔁</b> ниже повторяют генерацию под этим номером "
+        "и <b>списывают кредиты</b> по тарифу модели."
+    )
     return text
 
 
