@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.db.enum import UserRole
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import MenuAction
-from bot.keyboards.inline import ik_info_periods
+from bot.keyboards.inline import ik_info_periods, ik_profile_menu
 from bot.states import PromoState
 from bot.utils.admin_stats import build_admin_info_text
 from bot.utils.messaging import edit_or_answer
@@ -23,6 +23,7 @@ from bot.utils.promo import (
     create_promo_code,
     redeem_promo_code,
 )
+from bot.utils.texts import profile_text
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -38,22 +39,36 @@ _RESULT_MESSAGES = {
 ENTER_CODE_TEXT = "🎁 Введите промокод одним сообщением:"
 
 
-async def _apply_code(
-    message: Message,
+def _redeem_cancel_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="❌ Отмена",
+        callback_data=MenuAction(action="promo_cancel").pack(),
+    )
+    return builder.as_markup()
+
+
+def _back_to_profile_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="⬅️ В профиль",
+        callback_data=MenuAction(action="profile").pack(),
+    )
+    return builder.as_markup()
+
+
+async def _redeem_text(
     user: UserRD,
     session: AsyncSession,
     redis: Redis,
     code: str,
-) -> None:
+) -> str:
     result, credits = await redeem_promo_code(
         session=session, redis=redis, user=user, code=code
     )
     if result is PromoResult.OK:
-        await message.answer(f"✅ Промокод активирован! Начислено {credits} кредитов.")
-        return
-    await message.answer(
-        _RESULT_MESSAGES.get(result, _RESULT_MESSAGES[PromoResult.ERROR])
-    )
+        return f"✅ Промокод активирован! Начислено {credits} кредитов."
+    return _RESULT_MESSAGES.get(result, _RESULT_MESSAGES[PromoResult.ERROR])
 
 
 @router.message(Command("promo"))
@@ -67,11 +82,13 @@ async def cmd_promo(
 ) -> None:
     code = (command.args or "").strip()
     if not code:
+        # Вызов командой без панели для редактирования — просто просим код.
         await state.set_state(PromoState.waiting_code)
-        await message.answer(ENTER_CODE_TEXT)
+        await message.answer(ENTER_CODE_TEXT, reply_markup=_redeem_cancel_kb())
         return
     await state.clear()
-    await _apply_code(message, user, session, redis, code)
+    text = await _redeem_text(user, session, redis, code)
+    await message.answer(text)
 
 
 @router.callback_query(MenuAction.filter(F.action == "promo"))
@@ -79,7 +96,25 @@ async def menu_promo(query: CallbackQuery, state: FSMContext) -> None:
     await query.answer()
     await state.set_state(PromoState.waiting_code)
     if isinstance(query.message, Message):
-        await query.message.answer(ENTER_CODE_TEXT)
+        # Запоминаем сообщение профиля, чтобы редактировать его, а не слать новые.
+        await state.update_data(
+            promo_panel_chat_id=query.message.chat.id,
+            promo_panel_message_id=query.message.message_id,
+        )
+    await edit_or_answer(query, text=ENTER_CODE_TEXT, reply_markup=_redeem_cancel_kb())
+
+
+@router.callback_query(MenuAction.filter(F.action == "promo_cancel"))
+async def menu_promo_cancel(
+    query: CallbackQuery,
+    state: FSMContext,
+    user: UserRD,
+) -> None:
+    await query.answer("Отменено.")
+    await state.clear()
+    await edit_or_answer(
+        query, text=profile_text(user), reply_markup=await ik_profile_menu()
+    )
 
 
 @router.message(PromoState.waiting_code, F.text)
@@ -90,8 +125,17 @@ async def promo_code_input(
     session: AsyncSession,
     redis: Redis,
 ) -> None:
+    data = await state.get_data()
+    panel_chat_id = data.get("promo_panel_chat_id")
+    panel_message_id = data.get("promo_panel_message_id")
     await state.clear()
-    await _apply_code(message, user, session, redis, message.text or "")
+
+    text = await _redeem_text(user, session, redis, message.text or "")
+    edited = await _edit_panel(
+        message.bot, panel_chat_id, panel_message_id, text, _back_to_profile_kb()
+    )
+    if not edited:
+        await message.answer(text, reply_markup=_back_to_profile_kb())
 
 
 # ─── Создание промокода (админ-панель, без публичной команды) ─────────────────
