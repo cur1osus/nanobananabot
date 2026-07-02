@@ -54,6 +54,15 @@ class MyTracksPage(CallbackData, prefix="my_tracks"):
     page: int
 
 
+class GenHistoryPage(CallbackData, prefix="gen_hist"):
+    page: int
+
+
+class GenHistoryAction(CallbackData, prefix="gen_hist_act"):
+    action: str  # "repeat"
+    task_id: int
+
+
 class TopupMethod(CallbackData, prefix="topup_method"):
     method: str
 
