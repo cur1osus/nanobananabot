@@ -47,3 +47,8 @@ class SpeechTestState(StatesGroup):
 class BroadcastState(StatesGroup):
     waiting_message = State()
     confirm = State()
+
+
+class PromoState(StatesGroup):
+    waiting_code = State()
+    waiting_create = State()

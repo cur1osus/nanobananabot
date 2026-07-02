@@ -1,6 +1,14 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, String, Text, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.mysql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -173,4 +181,49 @@ class GenerationTaskModel(Base):
         TIMESTAMP,
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
+    )
+
+
+class PromoCodeModel(Base):
+    """Промокод на начисление кредитов.
+
+    ``max_activations`` = 0 означает неограниченное число активаций (в пределах
+    правила «один пользователь — одна активация», см. :class:`PromoRedemptionModel`).
+    ``used_activations`` инкрементируется атомарно с проверкой лимита, что не даёт
+    превысить число активаций при гонке.
+    """
+
+    __tablename__ = "promo_codes"
+
+    code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    credits: Mapped[int] = mapped_column()
+    max_activations: Mapped[int] = mapped_column(default=0, server_default="0")
+    used_activations: Mapped[int] = mapped_column(default=0, server_default="0")
+    expires_at: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    created_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP,
+        server_default=func.current_timestamp(),
+    )
+
+
+class PromoRedemptionModel(Base):
+    """Факт активации промокода пользователем.
+
+    Уникальность ``(promo_idpk, user_idpk)`` гарантирует, что один пользователь
+    активирует промокод не более одного раза (идемпотентность при повторном
+    нажатии/доставке)."""
+
+    __tablename__ = "promo_redemptions"
+    __table_args__ = (
+        UniqueConstraint("promo_idpk", "user_idpk", name="uq_promo_user"),
+    )
+
+    promo_idpk: Mapped[int] = mapped_column(ForeignKey("promo_codes.id"), index=True)
+    user_idpk: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    credits: Mapped[int] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP,
+        server_default=func.current_timestamp(),
     )

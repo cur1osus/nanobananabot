@@ -4,6 +4,7 @@ from . import (
     broadcast,
     create_deep_link,
     menu_commands,
+    promo,
     refund,
     speech_test,
     start,
@@ -18,3 +19,4 @@ router.include_router(refund.router)
 router.include_router(speech_test.router)
 router.include_router(broadcast.router)
 router.include_router(test_payment.router)
+router.include_router(promo.router)
