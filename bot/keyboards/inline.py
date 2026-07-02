@@ -385,6 +385,14 @@ async def ik_profile_menu() -> InlineKeyboardMarkup:
         callback_data=MenuAction(action="tracks").pack(),
     )
     builder.button(
+        text="🗂 История генераций",
+        callback_data=MenuAction(action="history").pack(),
+    )
+    builder.button(
+        text="🎁 Промокод",
+        callback_data=MenuAction(action="promo").pack(),
+    )
+    builder.button(
         text="ℹ️ Как это работает?",
         callback_data=MenuAction(action="how").pack(),
     )
@@ -552,10 +560,14 @@ async def ik_info_periods(selected: str) -> InlineKeyboardMarkup:
         callback_data=MenuAction(action="gift_zero").pack(),
     )
     builder.button(
+        text="🎟 Создать промокод",
+        callback_data=MenuAction(action="promo_new").pack(),
+    )
+    builder.button(
         text=BACK_BUTTON_TEXT,
         callback_data=MenuAction(action="home").pack(),
     )
-    builder.adjust(3, 1, 1, 1, 1, 1)
+    builder.adjust(4, 1, 1, 1, 1, 1)
     return builder.as_markup()
 
 

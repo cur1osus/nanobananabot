@@ -148,6 +148,8 @@ async def set_default_commands(bot: Bot, max_retries: int = 3) -> None:
                     BotCommand(command="create", description="Генерация изображения"),
                     BotCommand(command="create_video", description="Генерация видео"),
                     BotCommand(command="music", description="Создать музыку"),
+                    BotCommand(command="history", description="История генераций"),
+                    BotCommand(command="promo", description="Активировать промокод"),
                     BotCommand(command="model", description="Выбор модели"),
                     BotCommand(command="buy", description="Пополнить баланс"),
                     BotCommand(command="example", description="Примеры промптов"),
