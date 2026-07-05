@@ -63,7 +63,6 @@ KLING_MODELS: Final[tuple[KlingModelOption, ...]] = (
         supports_dimensions=True,
         supports_sound=True,
         ratio_dims=KLING_26_RATIO_DIMS,
-        needs_provider_settings=True,
     ),
     KlingModelOption(
         key="3.0",
