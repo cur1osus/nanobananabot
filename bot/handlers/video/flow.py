@@ -23,7 +23,12 @@ from bot.utils.billing import (
     enqueue_generation,
 )
 from bot.utils.messaging import edit_or_answer
-from bot.utils.video_models import VIDEO_RATIO_MAP, get_kling_model, video_cost
+from bot.utils.video_models import (
+    DEFAULT_VIDEO_DURATION,
+    VIDEO_RATIO_MAP,
+    get_kling_model,
+    video_cost,
+)
 from bot.utils.video_state import (
     VideoFlowData,
     get_video_data,
@@ -76,13 +81,30 @@ async def handle_video_setting(
     elif callback_data.setting == "duration":
         try:
             d = int(callback_data.value)
-            if d in (5, 10):
+            if d in get_kling_model(data.model_key).durations:
                 data.duration = d
         except ValueError:
             pass
 
     elif callback_data.setting == "audio":
         data.with_audio = callback_data.value == "1"
+
+    elif callback_data.setting == "quality4k":
+        from bot.utils.video_models import (
+            KLING_4K_BASE_MODEL_KEY,
+            KLING_4K_MODEL_KEY,
+        )
+
+        data.model_key = (
+            KLING_4K_MODEL_KEY
+            if callback_data.value == "1"
+            else KLING_4K_BASE_MODEL_KEY
+        )
+
+    # После смены модели длительность может стать недоступной — сбрасываем.
+    new_model = get_kling_model(data.model_key)
+    if new_model.supports_duration and data.duration not in new_model.durations:
+        data.duration = DEFAULT_VIDEO_DURATION
 
     from bot.utils.video_state import set_video_data
 

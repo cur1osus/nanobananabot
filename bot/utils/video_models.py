@@ -28,13 +28,41 @@ VIDEO_RATIO_DIMS: Final[Mapping[str, tuple[int, int]]] = MappingProxyType(
     }
 )
 
+# Kling 2.6 Pro accepts only these 1080p combinations (1:1 must be 1440x1440).
 KLING_26_RATIO_DIMS: Final[Mapping[str, tuple[int, int]]] = MappingProxyType(
     {
-        "1:1": (1080, 1080),
+        "1:1": (1440, 1440),
         "16:9": (1920, 1080),
         "9:16": (1080, 1920),
     }
 )
+
+# Kling 2.5 Turbo Pro accepts only these 720p combinations (1:1 is 720x720).
+KLING_25_RATIO_DIMS: Final[Mapping[str, tuple[int, int]]] = MappingProxyType(
+    {
+        "1:1": (720, 720),
+        "16:9": (1280, 720),
+        "9:16": (720, 1280),
+    }
+)
+
+# Kling 3.0 4K supports only these exact dimension combinations.
+KLING_3_4K_RATIO_DIMS: Final[Mapping[str, tuple[int, int]]] = MappingProxyType(
+    {
+        "1:1": (2880, 2880),
+        "16:9": (3840, 2160),
+        "9:16": (2160, 3840),
+    }
+)
+
+# "Kling 3.0" is backed by the Pro variant (1080p). The "4K" toggle switches to
+# the 4K variant (hidden from the model grid) and back.
+KLING_4K_MODEL_KEY: Final[str] = "3.0-4k"
+KLING_4K_BASE_MODEL_KEY: Final[str] = "3.0"
+
+# Durations offered for the Kling 3.0 family (spec allows 3-15s).
+KLING3_DURATIONS: Final[tuple[int, ...]] = (5, 10, 15)
+DEFAULT_DURATIONS: Final[tuple[int, ...]] = (5, 10)
 
 
 @dataclass(frozen=True)
@@ -44,12 +72,18 @@ class KlingModelOption:
     runware_model: str
     cost_5s: int
     cost_10s: int
+    cost_15s: int | None = None
     supports_duration: bool = False
     supports_dimensions: bool = False
     supports_sound: bool = False
     ratio_dims: Mapping[str, tuple[int, int]] = VIDEO_RATIO_DIMS
+    # Durations (seconds) offered in the UI for this model.
+    durations: tuple[int, ...] = DEFAULT_DURATIONS
     # Some Kling models need providerSettings.klingai when passing an image.
     needs_provider_settings: bool = False
+    # Whether the model appears in the model-selection grid. The Pro/4K quality
+    # tiers are hidden and activated only via their toggles.
+    selectable: bool = True
 
 
 KLING_MODELS: Final[tuple[KlingModelOption, ...]] = (
@@ -67,12 +101,29 @@ KLING_MODELS: Final[tuple[KlingModelOption, ...]] = (
     KlingModelOption(
         key="3.0",
         title="Kling 3.0",
-        runware_model="klingai:kling-video@o3-standard",
+        runware_model="klingai:kling-video@3-pro",
         cost_5s=20,
         cost_10s=35,
+        cost_15s=50,
         supports_duration=True,
         supports_dimensions=True,
         supports_sound=True,
+        ratio_dims=VIDEO_RATIO_DIMS,
+        durations=KLING3_DURATIONS,
+    ),
+    KlingModelOption(
+        key="3.0-4k",
+        title="Kling 3.0 4K",
+        runware_model="klingai:kling-video@3-4k",
+        cost_5s=60,
+        cost_10s=110,
+        cost_15s=160,
+        supports_duration=True,
+        supports_dimensions=True,
+        supports_sound=True,
+        ratio_dims=KLING_3_4K_RATIO_DIMS,
+        durations=KLING3_DURATIONS,
+        selectable=False,
     ),
     KlingModelOption(
         key="o1",
@@ -87,12 +138,14 @@ KLING_MODELS: Final[tuple[KlingModelOption, ...]] = (
     KlingModelOption(
         key="2.5turbo",
         title="Kling 2.5 Turbo",
-        runware_model="klingai:6@0",
+        # Pro (6@1) supports text-to-video; Standard (6@0) is image-to-video only.
+        runware_model="klingai:6@1",
         cost_5s=10,
         cost_10s=18,
-        supports_duration=False,
-        supports_dimensions=False,
+        supports_duration=True,
+        supports_dimensions=True,
         supports_sound=False,
+        ratio_dims=KLING_25_RATIO_DIMS,
     ),
 )
 
@@ -112,4 +165,8 @@ def video_cost(model_key: str, duration: int) -> int:
     model = get_kling_model(model_key)
     if not model.supports_duration:
         return model.cost_5s
-    return model.cost_5s if duration == 5 else model.cost_10s
+    if duration >= 15 and model.cost_15s is not None:
+        return model.cost_15s
+    if duration >= 10:
+        return model.cost_10s
+    return model.cost_5s

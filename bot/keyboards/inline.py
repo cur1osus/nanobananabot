@@ -31,7 +31,13 @@ from bot.utils.image_models import (
     is_adult_model_key,
 )
 from bot.utils.texts import get_topup_method, get_topup_tariffs
-from bot.utils.video_models import KLING_MODELS, VIDEO_RATIO_MAP, get_kling_model
+from bot.utils.video_models import (
+    KLING_4K_BASE_MODEL_KEY,
+    KLING_4K_MODEL_KEY,
+    KLING_MODELS,
+    VIDEO_RATIO_MAP,
+    get_kling_model,
+)
 
 LIMIT_BUTTONS: Final[int] = 100
 BACK_BUTTON_TEXT = "🔙 Назад"
@@ -610,24 +616,38 @@ async def ik_video_settings(
         )
         row_sizes.append(1)
 
+    # Переключатель 4K доступен только для Kling 3.0 (база — Pro 1080p).
+    if model_key in (KLING_4K_BASE_MODEL_KEY, KLING_4K_MODEL_KEY):
+        is_4k = model_key == KLING_4K_MODEL_KEY
+        fourk_label = "✅ 4K" if is_4k else "4K"
+        builder.button(
+            text=fourk_label,
+            callback_data=VideoSetting(
+                setting="quality4k", value="0" if is_4k else "1"
+            ).pack(),
+        )
+        row_sizes.append(1)
+
     # Длительность — только если модель поддерживает
     if model.supports_duration:
-        for d in (5, 10):
+        for d in model.durations:
             label = f"✅ {d} сек." if duration == d else f"{d} сек."
             builder.button(
                 text=label,
                 callback_data=VideoSetting(setting="duration", value=str(d)).pack(),
             )
-        row_sizes.append(2)
+        row_sizes.append(len(model.durations))
 
-    # Модели (всегда по 2 в ряд)
-    for m in KLING_MODELS:
+    # Модели (всегда по 2 в ряд). 4K-вариант скрыт — включается тумблером «4K».
+    selectable_models = [m for m in KLING_MODELS if m.selectable]
+    for m in selectable_models:
         label = f"✅ {m.title}" if m.key == model_key else m.title
         builder.button(
             text=label,
             callback_data=VideoSetting(setting="model", value=m.key).pack(),
         )
-    row_sizes.extend([2, 2])
+    n_selectable = len(selectable_models)
+    row_sizes.extend(min(2, n_selectable - i) for i in range(0, n_selectable, 2))
 
     # Соотношение сторон — только если модель поддерживает
     if model.supports_dimensions:
