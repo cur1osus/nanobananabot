@@ -605,6 +605,9 @@ async def ik_video_settings(
     )
     row_sizes.append(2)
 
+    # «Со звуком» и «4K» — в одном ряду (по 2, либо 1 если доступна только одна).
+    toggles_in_row = 0
+
     # Runware does not allow native sound with inputs.frameImages.
     if model.supports_sound and not has_image:
         audio_label = "✅ Со звуком" if with_audio else "Без звука"
@@ -614,7 +617,7 @@ async def ik_video_settings(
                 setting="audio", value="0" if with_audio else "1"
             ).pack(),
         )
-        row_sizes.append(1)
+        toggles_in_row += 1
 
     # Переключатель 4K доступен только для Kling 3.0 (база — Pro 1080p).
     if model_key in (KLING_4K_BASE_MODEL_KEY, KLING_4K_MODEL_KEY):
@@ -626,7 +629,10 @@ async def ik_video_settings(
                 setting="quality4k", value="0" if is_4k else "1"
             ).pack(),
         )
-        row_sizes.append(1)
+        toggles_in_row += 1
+
+    if toggles_in_row:
+        row_sizes.append(toggles_in_row)
 
     # Длительность — только если модель поддерживает
     if model.supports_duration:
