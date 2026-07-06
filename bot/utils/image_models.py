@@ -156,6 +156,9 @@ DEFAULT_ADULT_IMAGE_MODEL_KEY: Final[str] = "adult_flux_realistic"
 # повторяет генерацию через неё. См. generation_runner._run_image.
 PRODIA_FALLBACK_MODEL_KEY: Final[str] = "adult_flux_klein"
 
+# Дополнительная стоимость за 4K (CivitAI upscaler шаг).
+ADULT_4K_EXTRA_COST: Final[int] = 2
+
 
 def get_image_model(key: str) -> ImageModelOption:
     for option in ALL_IMAGE_MODELS:

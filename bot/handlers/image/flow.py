@@ -16,6 +16,7 @@ from bot.keyboards.factories import (
     AiPrompt,
     CreateAspectRatio,
     ImageNav,
+    ImageQuality,
     ImageResultAction,
     ModelGroupSwitch,
     ModelMenu,
@@ -38,6 +39,7 @@ from bot.keyboards.inline import (
 )
 from bot.states import BaseUserState, ImageGenerationState
 from bot.utils.image_models import (
+    ADULT_4K_EXTRA_COST,
     DEFAULT_IMAGE_MODEL_KEY,
     get_image_model,
     is_adult_model_key,
@@ -209,9 +211,16 @@ async def _run_create_generation(
 
     data = await get_image_data(state)
     model = get_image_model(data.model_key)
-    if user.credits < model.cost:
+    base_cost = model.cost
+    extra_cost = (
+        ADULT_4K_EXTRA_COST
+        if (data.is_4k and is_adult_model_key(data.model_key))
+        else 0
+    )
+    total_cost = base_cost + extra_cost
+    if user.credits < total_cost:
         await message.answer(
-            f"Недостаточно кредитов для генерации. Нужно: {model.cost}, у вас: {user.credits}",
+            f"Недостаточно кредитов для генерации. Нужно: {total_cost}, у вас: {user.credits}",
             reply_markup=await ik_back_home(),
         )
         return
@@ -227,13 +236,14 @@ async def _run_create_generation(
             redis=redis,
             user=user,
             kind=GenerationKind.IMAGE_CREATE.value,
-            cost=model.cost,
+            cost=total_cost,
             chat_id=message.chat.id,
             status_message_id=status_msg.message_id,
             params={
                 "model_key": data.model_key,
                 "prompt": normalized_prompt,
                 "aspect_ratio": data.aspect_ratio,
+                "is_4k": data.is_4k,
             },
         )
     except GenerationBusy:
@@ -243,7 +253,7 @@ async def _run_create_generation(
         return
     except CreditsExhausted:
         await status_msg.edit_text(
-            f"Недостаточно кредитов для генерации. Нужно: {model.cost}."
+            f"Недостаточно кредитов для генерации. Нужно: {total_cost}."
         )
         return
     except Exception:
@@ -700,6 +710,27 @@ async def select_create_aspect_ratio(
     prompt_text = ADULT_CREATE_PROMPT_TEXT if is_adult else CREATE_PROMPT_TEXT
     await edit_or_answer(
         query, text=prompt_text, reply_markup=await ik_create_prompt_nav(is_adult)
+    )
+
+
+@router.callback_query(
+    ImageGenerationState.waiting_create_aspect, ImageQuality.filter()
+)
+async def toggle_create_quality(
+    query: CallbackQuery,
+    callback_data: ImageQuality,
+    state: FSMContext,
+) -> None:
+    is_4k = callback_data.quality == "4k"
+    await update_image_data(state, is_4k=is_4k)
+    data = await get_image_data(state)
+    await query.answer()
+    await edit_or_answer(
+        query,
+        text=CREATE_ASPECT_RATIO_TEXT,
+        reply_markup=await ik_create_aspect_ratio(
+            is_adult=is_adult_model_key(data.model_key), is_4k=is_4k
+        ),
     )
 
 

@@ -302,6 +302,7 @@ async def generate_image(
     loras: list[dict[str, str | float]] | None = None,
     strength: float | None = None,
     on_civitai_submit: Callable[[str], Awaitable[None]] | None = None,
+    is_4k: bool = False,
 ) -> bytes:
     """Generate image via the configured provider.
 
@@ -347,6 +348,7 @@ async def generate_image(
             reference_images=reference_images,
             strength=strength,
             on_submit=on_civitai_submit,
+            is_4k=is_4k,
         )
 
     if se.image_backend.provider != "runware":

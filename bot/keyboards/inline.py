@@ -7,6 +7,7 @@ from bot.keyboards.factories import (
     AiPrompt,
     CreateAspectRatio,
     ImageNav,
+    ImageQuality,
     ImageResultAction,
     InfoPeriod,
     MenuAction,
@@ -306,7 +307,9 @@ async def ik_create_prompt_nav(is_adult: bool = False) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-async def ik_create_aspect_ratio(is_adult: bool = False) -> InlineKeyboardMarkup:
+async def ik_create_aspect_ratio(
+    is_adult: bool = False, is_4k: bool = False
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     options = (
         ("auto", "🔁 Auto"),
@@ -326,6 +329,12 @@ async def ik_create_aspect_ratio(is_adult: bool = False) -> InlineKeyboardMarkup
             text=label,
             callback_data=CreateAspectRatio(ratio=ratio).pack(),
         )
+    if is_adult:
+        fourk_label = "✅ 4K" if is_4k else "4K"
+        builder.button(
+            text=fourk_label,
+            callback_data=ImageQuality(quality="standard" if is_4k else "4k").pack(),
+        )
     # В 18+ выбора модели нет — кнопка «Назад» ведёт в меню раздела.
     if is_adult:
         builder.button(
@@ -341,7 +350,10 @@ async def ik_create_aspect_ratio(is_adult: bool = False) -> InlineKeyboardMarkup
         text="🏠 В главное меню",
         callback_data=MenuAction(action="home").pack(),
     )
-    builder.adjust(2, 3, 3, 3, 1, 1)
+    if is_adult:
+        builder.adjust(2, 3, 3, 3, 1, 1, 1)
+    else:
+        builder.adjust(2, 3, 3, 3, 1, 1)
     return builder.as_markup()
 
 

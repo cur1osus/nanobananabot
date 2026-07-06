@@ -94,6 +94,10 @@ class VideoNav(CallbackData, prefix="video_nav"):
     action: str
 
 
+class ImageQuality(CallbackData, prefix="img_quality"):
+    quality: str  # "4k" | "standard"
+
+
 class SelectScenario(CallbackData, prefix="scenario"):
     action: str  # "select" | "cancel"
     key: str = ""

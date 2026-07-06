@@ -17,6 +17,7 @@ class ImageFlowData:
     aspect_ratio: str = "auto"
     prompt: str = ""
     prompt_requested: bool = False
+    is_4k: bool = False
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> ImageFlowData:
@@ -31,6 +32,7 @@ class ImageFlowData:
             aspect_ratio=str(raw.get("aspect_ratio", "auto")) or "auto",
             prompt=str(raw.get("prompt", "")),
             prompt_requested=bool(raw.get("prompt_requested", False)),
+            is_4k=bool(raw.get("is_4k", False)),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -40,6 +42,7 @@ class ImageFlowData:
             "aspect_ratio": self.aspect_ratio,
             "prompt": self.prompt,
             "prompt_requested": self.prompt_requested,
+            "is_4k": self.is_4k,
         }
 
 

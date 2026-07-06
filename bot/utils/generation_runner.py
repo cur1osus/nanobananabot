@@ -224,6 +224,8 @@ async def _run_image(
             task.provider_task_id = workflow_id
             await session.commit()
 
+        is_4k = bool(params.get("is_4k", False))
+
         try:
             image_bytes = await generate_image(
                 prompt=positive_prompt,
@@ -239,6 +241,7 @@ async def _run_image(
                 loras=list(model.loras) if model.loras else None,
                 strength=scenario_strength,
                 on_civitai_submit=_persist_workflow_id,
+                is_4k=is_4k,
             )
         except ImageModerationError:
             # Раздел 18+ уже на open-weights модели — фолбэку неоткуда взяться.

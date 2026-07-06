@@ -92,6 +92,7 @@ def _build_workflow_request(
     loras: list[dict[str, str | float]] | None = None,
     reference_images: list[str] | None = None,
     strength: float | None = None,
+    is_4k: bool = False,
 ) -> dict:
     operation = "editImage" if reference_images else "createImage"
     step_input: dict = {
@@ -124,14 +125,29 @@ def _build_workflow_request(
             str(lora.get("model", "")): float(lora.get("weight", 1.0)) for lora in loras
         }
 
+    gen_step = {
+        "$type": "imageGen",
+        "name": "gen",
+        "input": step_input,
+    }
+
+    steps_list = [gen_step]
+
+    if is_4k and not reference_images:
+        steps_list.append(
+            {
+                "$type": "imageUpscaler",
+                "name": "upscale",
+                "input": {
+                    "image": {"$ref": "gen", "path": "output.images[0].url"},
+                    "numberOfRepeats": 1,
+                },
+            }
+        )
+
     return {
         "allowMatureContent": True,
-        "steps": [
-            {
-                "$type": "imageGen",
-                "input": step_input,
-            }
-        ],
+        "steps": steps_list,
     }
 
 
@@ -169,6 +185,7 @@ async def generate_image_civitai(
     strength: float | None = None,
     on_submit: collections.abc.Callable[[str], collections.abc.Awaitable[None]]
     | None = None,
+    is_4k: bool = False,
 ) -> bytes:
     """Сгенерировать изображение через CivitAI (submit + poll).
 
@@ -203,6 +220,7 @@ async def generate_image_civitai(
         loras=loras,
         reference_images=ref_urls,
         strength=strength,
+        is_4k=is_4k,
     )
 
     headers = {
@@ -349,6 +367,17 @@ async def _poll_civitai_image(
                     continue
 
                 for step in payload.get("steps", []):
+                    # Upscaler output comes as a blob, not images[].
+                    if step.get("$type") == "imageUpscaler":
+                        blob = step.get("output", {}).get("blob", {})
+                        if blob.get("url") and blob.get("available"):
+                            data = await _download_blob(blob["url"], auth_key)
+                            if data is not None:
+                                logger.info(
+                                    "Civitai 4K workflow %s done, blob available",
+                                    wf_id_short,
+                                )
+                                return data
                     for img in step.get("output", {}).get("images", []):
                         available = img.get("available", False)
                         image_url = img.get("url") or img.get("previewUrl")
